@@ -134,6 +134,7 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
     c->h264_loop_filter_strength= NULL;
 
     switch (bit_depth) {
+#ifndef RTC_SIZE_REDUCTION
     case 9:
         H264_DSP(9);
         break;
@@ -146,8 +147,9 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
     case 14:
         H264_DSP(14);
         break;
+#endif  // RTC_SIZE_REDUCTION
     default:
-        av_assert0(bit_depth<=8);
+//        av_assert0(bit_depth<=8);
         H264_DSP(8);
         break;
     }
