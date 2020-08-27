@@ -465,6 +465,7 @@ h_loop_filter_chroma420:
         ret
 endfunc
 
+#ifndef RTC_SIZE_REDUCTION
 function ff_h264_h_loop_filter_chroma422_neon, export=1
         sxtw            x1,  w1
         h264_loop_filter_start
@@ -478,6 +479,7 @@ function ff_h264_h_loop_filter_chroma422_neon, export=1
         mov             v24.s[0], w6
         b               h_loop_filter_chroma420
 endfunc
+#endif  // RTC_SIZE_REDUCTION
 
 .macro h264_loop_filter_chroma_intra
     uabd            v26.8b, v16.8b, v17.8b  // abs(p0 - q0)
@@ -577,6 +579,7 @@ h_loop_filter_chroma420_intra:
     ret
 endfunc
 
+#ifndef RTC_SIZE_REDUCTION
 function ff_h264_h_loop_filter_chroma422_intra_neon, export=1
     h264_loop_filter_start_intra
     sub             x4,  x0,  #2
@@ -588,6 +591,7 @@ function ff_h264_h_loop_filter_chroma422_intra_neon, export=1
     mov             x30, x7
     b               h_loop_filter_chroma420_intra
 endfunc
+#endif  // RTC_SIZE_REDUCTION
 
 .macro  biweight_16     macs, macd
         dup             v0.16B,  w5

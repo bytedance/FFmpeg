@@ -244,9 +244,11 @@ static VLC chroma_dc_coeff_token_vlc;
 static VLC_TYPE chroma_dc_coeff_token_vlc_table[256][2];
 static const int chroma_dc_coeff_token_vlc_table_size = 256;
 
+#ifndef RTC_SIZE_REDUCTION
 static VLC chroma422_dc_coeff_token_vlc;
 static VLC_TYPE chroma422_dc_coeff_token_vlc_table[8192][2];
 static const int chroma422_dc_coeff_token_vlc_table_size = 8192;
+#endif  // RTC_SIZE_REDUCTION
 
 static VLC total_zeros_vlc[15+1];
 static VLC_TYPE total_zeros_vlc_tables[15][512][2];
@@ -334,13 +336,14 @@ av_cold void ff_h264_decode_init_vlc(void)
              &chroma_dc_coeff_token_len [0], 1, 1,
              &chroma_dc_coeff_token_bits[0], 1, 1,
              INIT_VLC_USE_NEW_STATIC);
-
+#ifndef RTC_SIZE_REDUCTION
     chroma422_dc_coeff_token_vlc.table = chroma422_dc_coeff_token_vlc_table;
     chroma422_dc_coeff_token_vlc.table_allocated = chroma422_dc_coeff_token_vlc_table_size;
     init_vlc(&chroma422_dc_coeff_token_vlc, CHROMA422_DC_COEFF_TOKEN_VLC_BITS, 4*9,
              &chroma422_dc_coeff_token_len [0], 1, 1,
              &chroma422_dc_coeff_token_bits[0], 1, 1,
              INIT_VLC_USE_NEW_STATIC);
+#endif  // RTC_SIZE_REDUCTION
 
     offset = 0;
     for (int i = 0; i < 4; i++) {
@@ -445,8 +448,14 @@ static int decode_residual(const H264Context *h, H264SliceContext *sl,
     if(max_coeff <= 8){
         if (max_coeff == 4)
             coeff_token = get_vlc2(gb, chroma_dc_coeff_token_vlc.table, CHROMA_DC_COEFF_TOKEN_VLC_BITS, 1);
-        else
+        else {
+#ifndef RTC_SIZE_REDUCTION
             coeff_token = get_vlc2(gb, chroma422_dc_coeff_token_vlc.table, CHROMA422_DC_COEFF_TOKEN_VLC_BITS, 1);
+#else
+            av_log(h->avctx, AV_LOG_ERROR, "chroma422_dc_coeff_token_vlc not supported\n");
+            return -1;
+#endif  // RTC_SIZE_REDUCTION
+        }
         total_coeff= coeff_token>>2;
     }else{
         if(n >= LUMA_DC_BLOCK_INDEX){
