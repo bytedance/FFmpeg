@@ -170,6 +170,8 @@ void av_write_image_line(const uint16_t *src,
 #if FF_API_PLUS1_MINUS1
 FF_DISABLE_DEPRECATION_WARNINGS
 #endif
+
+#ifndef RTC_SIZE_REDUCTION
 static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
     [AV_PIX_FMT_YUV420P] = {
         .name = "yuv420p",
@@ -2396,6 +2398,23 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
     },
 };
+#else
+static const AVPixFmtDescriptor av_pix_fmt_descriptors[1] = {
+    [AV_PIX_FMT_YUV420P] = {
+        .name = "yuv420p",
+        .nb_components = 3,
+        .log2_chroma_w = 1,
+        .log2_chroma_h = 1,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
+            { 2, 1, 0, 0, 8, 0, 7, 1 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+};
+#endif  // RTC_SIZE_REDUCTION
+
 #if FF_API_PLUS1_MINUS1
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
@@ -2477,7 +2496,7 @@ static enum AVPixelFormat get_pix_fmt_internal(const char *name)
 {
     enum AVPixelFormat pix_fmt;
 
-    for (pix_fmt = 0; pix_fmt < AV_PIX_FMT_NB; pix_fmt++)
+    for (pix_fmt = 0; pix_fmt < FF_ARRAY_ELEMS(av_pix_fmt_descriptors); pix_fmt++)
         if (av_pix_fmt_descriptors[pix_fmt].name &&
             (!strcmp(av_pix_fmt_descriptors[pix_fmt].name, name) ||
              av_match_name(name, av_pix_fmt_descriptors[pix_fmt].alias)))
@@ -2488,7 +2507,7 @@ static enum AVPixelFormat get_pix_fmt_internal(const char *name)
 
 const char *av_get_pix_fmt_name(enum AVPixelFormat pix_fmt)
 {
-    return (unsigned)pix_fmt < AV_PIX_FMT_NB ?
+    return (unsigned)pix_fmt < FF_ARRAY_ELEMS(av_pix_fmt_descriptors) ?
         av_pix_fmt_descriptors[pix_fmt].name : NULL;
 }
 
@@ -2559,7 +2578,7 @@ char *av_get_pix_fmt_string(char *buf, int buf_size,
                             enum AVPixelFormat pix_fmt)
 {
     /* print header */
-    if (pix_fmt < 0) {
+    if (pix_fmt < 0 || pix_fmt >= FF_ARRAY_ELEMS(av_pix_fmt_descriptors)) {
        snprintf (buf, buf_size, "name" " nb_components" " nb_bits");
     } else {
         const AVPixFmtDescriptor *pixdesc = &av_pix_fmt_descriptors[pix_fmt];
@@ -2572,7 +2591,7 @@ char *av_get_pix_fmt_string(char *buf, int buf_size,
 
 const AVPixFmtDescriptor *av_pix_fmt_desc_get(enum AVPixelFormat pix_fmt)
 {
-    if (pix_fmt < 0 || pix_fmt >= AV_PIX_FMT_NB)
+    if (pix_fmt < 0 || pix_fmt >= FF_ARRAY_ELEMS(av_pix_fmt_descriptors))
         return NULL;
     return &av_pix_fmt_descriptors[pix_fmt];
 }
