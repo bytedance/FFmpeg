@@ -2424,6 +2424,70 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[] = {
         },
         .flags = AV_PIX_FMT_FLAG_PLANAR,
     },
+    [AV_PIX_FMT_NV12] = {
+        .name = "nv12",
+        .nb_components = 3,
+        .log2_chroma_w = 1,
+        .log2_chroma_h = 1,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 2, 0, 0, 8, 1, 7, 1 },        /* U */
+            { 1, 2, 1, 0, 8, 1, 7, 2 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+    [AV_PIX_FMT_ARGB] = {
+        .name = "argb",
+        .nb_components = 4,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 4, 1, 0, 8, 3, 7, 2 },        /* R */
+            { 0, 4, 2, 0, 8, 3, 7, 3 },        /* G */
+            { 0, 4, 3, 0, 8, 3, 7, 4 },        /* B */
+            { 0, 4, 0, 0, 8, 3, 7, 1 },        /* A */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
+    },
+    [AV_PIX_FMT_RGBA] = {
+        .name = "rgba",
+        .nb_components = 4,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 4, 0, 0, 8, 3, 7, 1 },        /* R */
+            { 0, 4, 1, 0, 8, 3, 7, 2 },        /* G */
+            { 0, 4, 2, 0, 8, 3, 7, 3 },        /* B */
+            { 0, 4, 3, 0, 8, 3, 7, 4 },        /* A */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
+    },
+    [AV_PIX_FMT_ABGR] = {
+        .name = "abgr",
+        .nb_components = 4,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 4, 3, 0, 8, 3, 7, 4 },        /* R */
+            { 0, 4, 2, 0, 8, 3, 7, 3 },        /* G */
+            { 0, 4, 1, 0, 8, 3, 7, 2 },        /* B */
+            { 0, 4, 0, 0, 8, 3, 7, 1 },        /* A */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
+    },
+    [AV_PIX_FMT_BGRA] = {
+        .name = "bgra",
+        .nb_components = 4,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 4, 2, 0, 8, 3, 7, 3 },        /* R */
+            { 0, 4, 1, 0, 8, 3, 7, 2 },        /* G */
+            { 0, 4, 0, 0, 8, 3, 7, 1 },        /* B */
+            { 0, 4, 3, 0, 8, 3, 7, 4 },        /* A */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
+    },
 };
 #endif  // RTC_SIZE_REDUCTION
 
