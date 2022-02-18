@@ -304,12 +304,24 @@ static void tt_format_io_close(AVFormatContext *s, AVIOContext **pb) {
     *pb = NULL;
 }
 
+static void free_adaptation_set_property(struct adaptation_set_property **property) {
+    if (!(*property)) {
+        return;
+    }
+    av_freep(&(*property)->scheme_id_uri);
+    av_freep(&(*property)->value);
+    av_freep(&(*property)->adaptation_type);
+    av_freep(property);
+}
+
 void free_representation(struct representation *pls)
 {
     free_fragment_list(pls);
     free_timelines_list(pls);
     free_fragment(&pls->cur_seg);
     free_fragment(&pls->init_section);
+    free_adaptation_set_property(&pls->essential_property);
+    free_adaptation_set_property(&pls->supplemental_property);
     av_dict_free(&pls->avio_opts);
     av_freep(&pls->init_sec_buf);
     av_freep(&pls->pb.buffer);
@@ -702,7 +714,9 @@ static int parse_manifest_representation(DASHContext *c, const char *url,
                                          xmlNodePtr content_component_node,
                                          xmlNodePtr adaptionset_baseurl_node,
                                          xmlNodePtr adaptionset_segmentlist_node,
-                                         xmlNodePtr adaptionset_contentprotection_node)
+                                         xmlNodePtr adaptionset_contentprotection_node,
+                                         xmlNodePtr adaptionset_essential_property_node,
+                                         xmlNodePtr adaptionset_supplemental_property_node)
 {
     int32_t ret = 0;
     int32_t audio_rep_idx = 0;
@@ -977,6 +991,72 @@ static int parse_manifest_representation(DASHContext *c, const char *url,
         }
 #endif
         if (rep) {
+            if (adaptionset_essential_property_node) {
+                rep->essential_property = av_mallocz(sizeof(struct adaptation_set_property));
+                if (rep->essential_property) {
+                    char *scheme_id_uri   = xmlGetProp(adaptionset_essential_property_node, "schemeIdUri");
+                    char *property_value  = xmlGetProp(adaptionset_essential_property_node, "value");
+                    char *adaptation_type = xmlGetProp(adaptionset_essential_property_node, "adaptationType");
+                    if (scheme_id_uri) {
+                        size_t len = strlen(scheme_id_uri) + 1;
+                        rep->essential_property->scheme_id_uri = av_mallocz(len);
+                        if (rep->essential_property->scheme_id_uri) {
+                            av_strlcpy(rep->essential_property->scheme_id_uri, scheme_id_uri, len);
+                        }
+                        xmlFree(scheme_id_uri);
+                    }
+                    if (property_value) {
+                        size_t len = strlen(property_value) + 1;
+                        rep->essential_property->value = av_mallocz(len);
+                        if (rep->essential_property->value) {
+                            av_strlcpy(rep->essential_property->value, property_value, len);
+                        }
+                        xmlFree(property_value);
+                    }
+                    if (adaptation_type) {
+                        size_t len = strlen(adaptation_type) + 1;
+                        rep->essential_property->adaptation_type = av_mallocz(len);
+                        if (rep->essential_property->adaptation_type) {
+                            av_strlcpy(rep->essential_property->adaptation_type, adaptation_type, len);
+                        }
+                        xmlFree(adaptation_type);
+                    }
+                }
+            }
+            if (adaptionset_supplemental_property_node) {
+                rep->supplemental_property = av_mallocz(sizeof(struct adaptation_set_property));
+                if (rep->supplemental_property) {
+                    char *scheme_id_uri   = xmlGetProp(adaptionset_supplemental_property_node, "schemeIdUri");
+                    char *property_value  = xmlGetProp(adaptionset_supplemental_property_node, "value");
+                    char *adaptation_type = xmlGetProp(adaptionset_supplemental_property_node, "adaptationType");
+                    if (scheme_id_uri) {
+                        size_t len = strlen(scheme_id_uri) + 1;
+                        rep->supplemental_property->scheme_id_uri = av_mallocz(len);
+                        if (rep->supplemental_property->scheme_id_uri) {
+                            av_strlcpy(rep->supplemental_property->scheme_id_uri, scheme_id_uri, len);
+                        }
+                        xmlFree(scheme_id_uri);
+                    }
+                    if (property_value) {
+                        size_t len = strlen(property_value) + 1;
+                        rep->supplemental_property->value = av_mallocz(len);
+                        if (rep->supplemental_property->value) {
+                            av_strlcpy(rep->supplemental_property->value, property_value, len);
+                        }
+                        xmlFree(property_value);
+                    }
+                    if (adaptation_type) {
+                        size_t len = strlen(adaptation_type) + 1;
+                        rep->supplemental_property->adaptation_type = av_mallocz(len);
+                        if (rep->supplemental_property->adaptation_type) {
+                            av_strlcpy(rep->supplemental_property->adaptation_type, adaptation_type, len);
+                        }
+                        xmlFree(adaptation_type);
+                    }
+                }
+            }
+        }
+        if (rep) {
             rep->is_opened = 0;
             rep->seek_pos = -1;
             rep->seek_flags = -1;
@@ -1030,6 +1110,8 @@ static int parse_manifest_adaptationset(DASHContext *c, const char *url,
     xmlNodePtr adaptionset_baseurl_node = NULL;
     xmlNodePtr adaptionset_segmentlist_node = NULL;
     xmlNodePtr adaptionset_contentprotection_node = NULL;
+    xmlNodePtr adaptionset_essential_property_node = NULL;
+    xmlNodePtr adaptionset_supplemental_property_node = NULL;
     xmlNodePtr node = NULL;
 
     node = xmlFirstElementChild(adaptionset_node);
@@ -1044,6 +1126,10 @@ static int parse_manifest_adaptationset(DASHContext *c, const char *url,
             adaptionset_segmentlist_node = node;
         } else if (!av_strcasecmp((const char *)node->name, (const char *)"ContentProtection")) {
             adaptionset_contentprotection_node = node;
+        } else if (!av_strcasecmp(node->name, (const char *) "EssentialProperty")) {
+            adaptionset_essential_property_node = node;
+        } else if (!av_strcasecmp(node->name, (const char *) "SupplementalProperty")) {
+            adaptionset_supplemental_property_node = node;
         } else if (!av_strcasecmp((const char *)node->name, (const char *)"Representation")) {
             ret = parse_manifest_representation(c, url, node,
                                                 adaptionset_node,
@@ -1055,7 +1141,9 @@ static int parse_manifest_adaptationset(DASHContext *c, const char *url,
                                                 content_component_node,
                                                 adaptionset_baseurl_node,
                                                 adaptionset_segmentlist_node,
-                                                adaptionset_contentprotection_node);
+                                                adaptionset_contentprotection_node,
+                                                adaptionset_essential_property_node,
+                                                adaptionset_supplemental_property_node);
             if (ret < 0) {
                 return ret;
             }

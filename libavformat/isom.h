@@ -304,6 +304,7 @@ typedef struct MOVContext {
     int prefer_nearest_max_pos_offset;
     int disable_short_seek;
     int enable_drm;
+    int64_t enable_decrypt;
     int drm_downgrade;
     intptr_t drm_aptr;
     void *drm_ctx;

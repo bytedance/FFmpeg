@@ -306,3 +306,7 @@ void tt_make_absolute_url(char *buf, int size, const char *base,
 int tt_check_interrupt(AVIOInterruptCB *cb) {
     return ff_check_interrupt(cb);
 }
+
+void tt_free_stream(AVFormatContext *s, AVStream *st) {
+    ff_free_stream(s, st);
+}

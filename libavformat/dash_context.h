@@ -86,6 +86,12 @@ struct timeline {
   int64_t duration;
 };
 
+struct adaptation_set_property {
+    char *scheme_id_uri;
+    char *value;
+    char *adaptation_type;
+};
+
 /*
  * Each playlist has its own demuxer. If it is currently active,
  * it has an opened AVIOContext too, and potentially an AVPacket
@@ -160,10 +166,13 @@ struct representation {
   int is_skip_needed;
   // really download segment count, isn't same to the segment num.
   int down_segment_count;
+
+  struct adaptation_set_property *essential_property;
+  struct adaptation_set_property *supplemental_property;
 };
 
 typedef struct DASHContext {
-  const AVClass *class;
+  const AVClass *av_class;
   char *base_url;
 
   int stream_count;

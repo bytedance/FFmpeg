@@ -6856,7 +6856,7 @@ static int cenc_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *s
     return 0;
 }
 
-static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPacket *pkt, int current_index)
+static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPacket *pkt, int current_index, int enable_decrypt)
 {
     MOVFragmentStreamInfo *frag_stream_info;
     MOVEncryptionIndex *encryption_index;
@@ -6902,21 +6902,27 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
             av_log(mov->fc, AV_LOG_ERROR, "Incorrect number of samples in encryption info\n");
             return AVERROR_INVALIDDATA;
         }
-
-        if (mov->drm_ctx) {
-            ret = drm_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
-            if (mov->drm_downgrade == 0 || ret != AVERROR_DRM_DECRYPT_FAILED) {
-                return ret;
-            } else {
-                if (mov->drm_aptr == 0) {
-                    av_drm_close(mov->drm_ctx);
-                    av_freep(&mov->drm_ctx);
+        if (enable_decrypt) {
+#if CONFIG_DRM
+            if (mov->drm_ctx) {
+                ret = drm_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
+                if (mov->drm_downgrade == 0 || ret != AVERROR_DRM_DECRYPT_FAILED) {
+                    return ret;
+                } else {
+                    if (mov->drm_aptr == 0) {
+                        av_drm_close(mov->drm_ctx);
+                        av_freep(&mov->drm_ctx);
+                    }
+                    mov->drm_ctx = NULL;
                 }
-                mov->drm_ctx = NULL;
             }
-        }
-        if (mov->decryption_key) {
-            return cenc_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
+#endif
+            if (mov->decryption_key) {
+                return cenc_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
+            } else {
+                av_log(mov->fc, AV_LOG_FATAL, "AVERROR_DECRYPTION_KEY_IS_NULL, encrypt packet need decrypt\n");
+                return AVERROR_DECRYPTION_KEY_IS_NULL;
+            }
         } else {
             size_t size;
             uint8_t *side_data = av_encryption_info_add_side_data(encrypted_sample, &size);
@@ -8373,7 +8379,11 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (mov->aax_mode)
         aax_filter(pkt->data, pkt->size, mov);
 
-    ret = cenc_filter(mov, st, sc, pkt, current_index);
+    int64_t enable_decrypt = 1;
+    if (st->codecpar->codec_type != AVMEDIA_TYPE_UNKNOWN) {
+        enable_decrypt = (mov->enable_decrypt >> (int)(st->codecpar->codec_type)) & 0x1;
+    }
+    ret = cenc_filter(mov, st, sc, pkt, current_index, enable_decrypt);
     if (ret < 0) {
         return ret;
     }
@@ -8861,6 +8871,8 @@ static const AVOption mov_options[] = {
         AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS },
     { "enable_drm", "Enable drm", OFFSET(enable_drm),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = FLAGS },
+    { "enable_decrypt", "Enable decrypt", OFFSET(enable_decrypt),
+        AV_OPT_TYPE_INT64, { .i64 = 0xffffLL }, 0, 0xffffLL, .flags = FLAGS },
     { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade),
         AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { "drm_aptr", "Drm aptr", OFFSET(drm_aptr),
