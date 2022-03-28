@@ -1164,11 +1164,12 @@ static av_cold int nvenc_setup_hevc_config(AVCodecContext *avctx)
         hevc->idrPeriod = cc->gopLength;
     }
 
-    if (IS_CBR(cc->rcParams.rateControlMode)) {
+    if (IS_CBR(cc->rcParams.rateControlMode) && !ctx->tile_mode) {
         hevc->outputBufferingPeriodSEI = 1;
     }
 
-    hevc->outputPictureTimingSEI = 1;
+    if (!ctx->tile_mode)
+        hevc->outputPictureTimingSEI = 1;
 
     switch (ctx->profile) {
     case NV_ENC_HEVC_PROFILE_MAIN:
@@ -1214,6 +1215,11 @@ static av_cold int nvenc_setup_hevc_config(AVCodecContext *avctx)
     hevc->numRefL1 = avctx->refs;
 #endif
 
+    if (ctx->tile_mode) {
+        hevc->enableConstrainedEncoding = 1;
+        hevc->disableDeblockAcrossSliceBoundary = 1;
+    }
+
     return 0;
 }
 
@@ -1255,6 +1261,11 @@ static av_cold int nvenc_setup_encoder(AVCodecContext *avctx)
     AVCPBProperties *cpb_props;
     int res = 0;
     int dw, dh;
+
+    if (ctx->tile_mode && !ctx->no_scenecut) {
+        av_log(avctx, AV_LOG_WARNING, "tile mode must close scenecut\n");
+        ctx->no_scenecut = 1;
+    }
 
     ctx->encode_config.version = NV_ENC_CONFIG_VER;
     ctx->init_encode_params.version = NV_ENC_INITIALIZE_PARAMS_VER;
@@ -1896,6 +1907,10 @@ static void nvenc_codec_specific_pic_params(AVCodecContext *avctx,
         if (sei_count > 0) {
             params->codecPicParams.hevcPicParams.seiPayloadArray = sei_data;
             params->codecPicParams.hevcPicParams.seiPayloadArrayCnt = sei_count;
+        }
+
+        if (ctx->tile_mode) {
+            params->codecPicParams.hevcPicParams.constrainedFrame = 1;
         }
 
         break;

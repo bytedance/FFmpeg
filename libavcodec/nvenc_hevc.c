@@ -163,6 +163,7 @@ static const AVOption options[] = {
     { "ldkfs",        "Low delay key frame scale; Specifies the Scene Change frame size increase allowed in case of single frame VBV and CBR",
                                                             OFFSET(ldkfs),        AV_OPT_TYPE_INT,   { .i64 = 0 }, 0, UCHAR_MAX, VE },
 #endif
+    { "tile_mode",    "set to 1 to enable tile mode",       OFFSET(tile_mode),    AV_OPT_TYPE_BOOL,  { .i64 = 0 }, 0, 1,       VE },
     { NULL }
 };
 
