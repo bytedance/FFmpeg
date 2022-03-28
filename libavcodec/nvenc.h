@@ -219,6 +219,7 @@ typedef struct NvencContext
     int tuning_info;
     int multipass;
     int ldkfs;
+    int tile_mode;
 } NvencContext;
 
 int ff_nvenc_encode_init(AVCodecContext *avctx);
