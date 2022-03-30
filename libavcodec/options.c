@@ -76,7 +76,10 @@ static AVClassCategory get_category(void *ptr)
     if(avctx->codec && avctx->codec->decode) return AV_CLASS_CATEGORY_DECODER;
     else                                     return AV_CLASS_CATEGORY_ENCODER;
 }
-
+static aptr_t avcodec_get_aptr(void * ptr) {
+    AVCodecContext* avctx = ptr;
+    return avctx->aptr;
+}
 static const AVClass av_codec_context_class = {
     .class_name              = "AVCodecContext",
     .item_name               = context_to_name,
@@ -87,6 +90,7 @@ static const AVClass av_codec_context_class = {
     .child_class_next        = codec_child_class_next,
     .category                = AV_CLASS_CATEGORY_ENCODER,
     .get_category            = get_category,
+    .get_aptr                = avcodec_get_aptr,
 };
 
 static int init_context_defaults(AVCodecContext *s, const AVCodec *codec)

@@ -1297,7 +1297,7 @@ static int h264_select_output_frame(H264Context *h)
     }
     out_of_order = MAX_DELAYED_PIC_COUNT - i;
     if(   cur->f->pict_type == AV_PICTURE_TYPE_B
-       || (h->last_pocs[MAX_DELAYED_PIC_COUNT-2] > INT_MIN && h->last_pocs[MAX_DELAYED_PIC_COUNT-1] - h->last_pocs[MAX_DELAYED_PIC_COUNT-2] > 2))
+       || (h->last_pocs[MAX_DELAYED_PIC_COUNT-2] > INT_MIN && h->last_pocs[MAX_DELAYED_PIC_COUNT-1] - (int64_t)h->last_pocs[MAX_DELAYED_PIC_COUNT-2] > 2))
         out_of_order = FFMAX(out_of_order, 1);
     if (out_of_order == MAX_DELAYED_PIC_COUNT) {
         av_log(h->avctx, AV_LOG_VERBOSE, "Invalid POC %d<%d\n", cur->poc, h->last_pocs[0]);
@@ -1552,6 +1552,12 @@ static int h264_field_start(H264Context *h, const H264SliceContext *sl,
                  * one except for reference purposes. */
                 h->first_field = 1;
                 h->cur_pic_ptr = NULL;
+            } else if (h->cur_pic_ptr->reference & DELAYED_PIC_REF) {
+                /* This frame was already output, we cannot draw into it
+                 * anymore.
+                 */
+                h->first_field = 1;
+                h->cur_pic_ptr = NULL;
             } else {
                 /* Second field in complementary pair */
                 h->first_field = 0;
@@ -1782,7 +1788,8 @@ static int h264_slice_header_parse(const H264Context *h, H264SliceContext *sl,
         (pps->weighted_bipred_idc == 1 &&
          sl->slice_type_nos == AV_PICTURE_TYPE_B)) {
         ret = ff_h264_pred_weight_table(&sl->gb, sps, sl->ref_count,
-                                  sl->slice_type_nos, &sl->pwt, h->avctx);
+                                  sl->slice_type_nos, &sl->pwt,
+                                  picture_structure, h->avctx);
         if (ret < 0)
             return ret;
     }
@@ -1804,7 +1811,7 @@ static int h264_slice_header_parse(const H264Context *h, H264SliceContext *sl,
     }
 
     sl->last_qscale_diff = 0;
-    tmp = pps->init_qp + get_se_golomb(&sl->gb);
+    tmp = pps->init_qp + (unsigned)get_se_golomb(&sl->gb);
     if (tmp > 51 + 6 * (sps->bit_depth_luma - 8)) {
         av_log(h->avctx, AV_LOG_ERROR, "QP %u out of range\n", tmp);
         return AVERROR_INVALIDDATA;
@@ -1834,17 +1841,19 @@ static int h264_slice_header_parse(const H264Context *h, H264SliceContext *sl,
             sl->deblocking_filter ^= 1;  // 1<->0
 
         if (sl->deblocking_filter) {
-            sl->slice_alpha_c0_offset = get_se_golomb(&sl->gb) * 2;
-            sl->slice_beta_offset     = get_se_golomb(&sl->gb) * 2;
-            if (sl->slice_alpha_c0_offset >  12 ||
-                sl->slice_alpha_c0_offset < -12 ||
-                sl->slice_beta_offset >  12     ||
-                sl->slice_beta_offset < -12) {
+            int slice_alpha_c0_offset_div2 = get_se_golomb(&sl->gb);
+            int slice_beta_offset_div2     = get_se_golomb(&sl->gb);
+            if (slice_alpha_c0_offset_div2 >  6 ||
+                slice_alpha_c0_offset_div2 < -6 ||
+                slice_beta_offset_div2 >  6     ||
+                slice_beta_offset_div2 < -6) {
                 av_log(h->avctx, AV_LOG_ERROR,
                        "deblocking filter parameters %d %d out of range\n",
-                       sl->slice_alpha_c0_offset, sl->slice_beta_offset);
+                       slice_alpha_c0_offset_div2, slice_beta_offset_div2);
                 return AVERROR_INVALIDDATA;
             }
+            sl->slice_alpha_c0_offset = slice_alpha_c0_offset_div2 * 2;
+            sl->slice_beta_offset     = slice_beta_offset_div2 * 2;
         }
     }
 

@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 /**
@@ -166,26 +169,27 @@ static void colored_fputs(int level, int tint, const char *str)
     if (local_use_color)
         SetConsoleTextAttribute(con, attr_orig);
 #else
-    if (local_use_color == 1) {
-        fprintf(stderr,
-                "\033[%"PRIu32";3%"PRIu32"m%s\033[0m",
-                (color[level] >> 4) & 15,
-                color[level] & 15,
-                str);
-    } else if (tint && use_color == 256) {
-        fprintf(stderr,
-                "\033[48;5;%"PRIu32"m\033[38;5;%dm%s\033[0m",
-                (color[level] >> 16) & 0xff,
-                tint,
-                str);
-    } else if (local_use_color == 256) {
-        fprintf(stderr,
-                "\033[48;5;%"PRIu32"m\033[38;5;%"PRIu32"m%s\033[0m",
-                (color[level] >> 16) & 0xff,
-                (color[level] >> 8) & 0xff,
-                str);
-    } else
-        fputs(str, stderr);
+    // if (local_use_color == 1) {
+    //     fprintf(stderr,
+    //             "\033[%"PRIu32";3%"PRIu32"m%s\033[0m",
+    //             (color[level] >> 4) & 15,
+    //             color[level] & 15,
+    //             str);
+    // } else if (tint && use_color == 256) {
+    //     fprintf(stderr,
+    //             "\033[48;5;%"PRIu32"m\033[38;5;%dm%s\033[0m",
+    //             (color[level] >> 16) & 0xff,
+    //             tint,
+    //             str);
+    // } else if (local_use_color == 256) {
+    //     fprintf(stderr,
+    //             "\033[48;5;%"PRIu32"m\033[38;5;%"PRIu32"m%s\033[0m",
+    //             (color[level] >> 16) & 0xff,
+    //             (color[level] >> 8) & 0xff,
+    //             str);
+    // } 
+    // else
+    //     fputs(str, stderr);
 #endif
 
 }
@@ -332,14 +336,14 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
     if (print_prefix && (flags & AV_LOG_SKIP_REPEATED) && !strcmp(line, prev) &&
         *line && line[strlen(line) - 1] != '\r'){
         count++;
-        if (is_atty == 1)
-            fprintf(stderr, "    Last message repeated %d times\r", count);
+        // if (is_atty == 1)
+        //     fprintf(stderr, "    Last message repeated %d times\r", count);
         goto end;
     }
-    if (count > 0) {
-        fprintf(stderr, "    Last message repeated %d times\n", count);
-        count = 0;
-    }
+    // if (count > 0) {
+    //     fprintf(stderr, "    Last message repeated %d times\n", count);
+    //     count = 0;
+    // }
     strcpy(prev, line);
     sanitize(part[0].str);
     colored_fputs(type[0], 0, part[0].str);
@@ -363,8 +367,9 @@ end:
 
 static void (*av_log_callback)(void*, int, const char*, va_list) =
     av_log_default_callback;
+static void (*av_fatal_callback)(void*, int, int, const char*) = NULL;
 
-void av_log(void* avcl, int level, const char *fmt, ...)
+void av_logx(void* avcl, int level, const char *fmt, ...)
 {
     AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
     va_list vl;
@@ -376,11 +381,59 @@ void av_log(void* avcl, int level, const char *fmt, ...)
     va_end(vl);
 }
 
+void av_ll(void *avcl, int level, const char* file_name, const char* function_name, int line_num, const char *fmt, ...) {
+    const int size = 512;
+    char logbuffer[512];
+    int print_prefix = 0;
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    int log_level = av_log_level;
+    if (avc && avc->get_aptr &&
+        avc->get_aptr(avcl)) {
+        log_level = ((LogWrapper*)(avc->get_aptr(avcl)))->logLevel;
+    }
+    if(level > log_level)
+        return;
+
+    va_list vl;
+    va_start(vl, fmt);
+    av_log_format_line(avcl, level, fmt, vl, logbuffer, size, &print_prefix);
+    va_end(vl);
+    av_logx(avcl, level, "<%s %s %d> %s", file_name, function_name, line_num, logbuffer);
+}
 void av_vlog(void* avcl, int level, const char *fmt, va_list vl)
 {
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
     void (*log_callback)(void*, int, const char*, va_list) = av_log_callback;
+    if (avc && avc->get_aptr &&
+        avc->get_aptr(avcl)) {
+        log_callback = ((LogWrapper*)(avc->get_aptr(avcl)))->log_callback;
+    }
     if (log_callback)
         log_callback(avcl, level, fmt, vl);
+}
+void av_log_fatal(void *avcl, int type, int code, const char* file, const char* function, int line, const char *fmt, ...) {
+    const int size = 512;
+    char logbuffer[512];
+    char retbuf[512];
+
+    va_list vl;
+    va_start(vl, fmt);
+    vsnprintf(logbuffer, size, fmt, vl);
+    va_end(vl);
+
+    snprintf(retbuf, size, "<%s,%s,%d>%s\n", file, function, line, logbuffer);
+    void (*log_fatal_callback)(void*, int, int, const char*) = NULL;
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    if (avc && avc->get_aptr &&
+        avc->get_aptr(avcl)) {
+        log_fatal_callback = ((LogWrapper*)(avc->get_aptr(avcl)))->log_fatal_callback;
+    }
+    if( log_fatal_callback != NULL ) {
+        log_fatal_callback(avcl, type, code, retbuf);
+    }
+}
+void av_fatal_set_callback(void(*callback)(void*, int, int, const char*)) {
+    av_fatal_callback = callback;
 }
 
 int av_log_get_level(void)

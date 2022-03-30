@@ -27,6 +27,7 @@
 #include "libavutil/mem.h"
 
 #include "hevc.h"
+#include "h264.h"
 #include "h2645_parse.h"
 
 int ff_h2645_extract_rbsp(const uint8_t *src, int length,
@@ -223,10 +224,10 @@ static int hevc_parse_nal_header(H2645NAL *nal, void *logctx)
     if (nal->temporal_id < 0)
         return AVERROR_INVALIDDATA;
 
-    av_log(logctx, AV_LOG_DEBUG,
+    /*av_log(logctx, AV_LOG_DEBUG,
            "nal_unit_type: %d(%s), nuh_layer_id: %d, temporal_id: %d\n",
            nal->type, nal_unit_name(nal->type), nuh_layer_id, nal->temporal_id);
-
+    */
     return nuh_layer_id == 0;
 }
 
@@ -240,9 +241,9 @@ static int h264_parse_nal_header(H2645NAL *nal, void *logctx)
     nal->ref_idc = get_bits(gb, 2);
     nal->type    = get_bits(gb, 5);
 
-    av_log(logctx, AV_LOG_DEBUG,
+    /*av_log(logctx, AV_LOG_DEBUG,
            "nal_unit_type: %d, nal_ref_idc: %d\n",
-           nal->type, nal->ref_idc);
+           nal->type, nal->ref_idc);*/
 
     return 1;
 }
@@ -252,6 +253,7 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
                           enum AVCodecID codec_id, int small_padding)
 {
     int consumed, ret = 0;
+    int paddingAlloc = 0;
     const uint8_t *next_avc = is_nalff ? buf : buf + length;
 
     pkt->nb_nals = 0;
@@ -345,6 +347,7 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
 
         nal->size_bits = get_bit_length(nal, skip_trailing_zeros);
 
+init_ctx:
         ret = init_get_bits(&nal->gb, nal->data, nal->size_bits);
         if (ret < 0)
             return ret;
@@ -360,7 +363,23 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
             }
             pkt->nb_nals--;
         }
-
+        if (codec_id == AV_CODEC_ID_H264 &&
+            (nal->type == H264_NAL_SPS || nal->type == H264_NAL_PPS) && !paddingAlloc &&
+            (length - consumed) < AV_INPUT_BUFFER_PADDING_SIZE) {
+            av_log(NULL, AV_LOG_DEBUG, "nal.type: %d, nal.size: %d, length: %d, buffer size: %d \n", nal->type, nal->raw_size, length, nal->rbsp_buffer_size);
+            //handle sequence header as same as extradata
+            av_fast_padded_malloc(&nal->rbsp_buffer, &nal->rbsp_buffer_size, nal->size);
+            if (!nal->rbsp_buffer) {
+                return AVERROR(ENOMEM);
+            }
+            memcpy(nal->rbsp_buffer, nal->data, nal->size);
+            av_log(NULL, AV_LOG_DEBUG,"realloc rbsp size: %d", nal->rbsp_buffer_size);
+            memset(nal->rbsp_buffer + nal->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+            nal->data = nal->rbsp_buffer;
+            paddingAlloc = 1;
+            goto init_ctx;
+        }
+        paddingAlloc = 0;
         buf    += consumed;
         length -= consumed;
     }

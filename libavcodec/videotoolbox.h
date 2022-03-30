@@ -37,6 +37,12 @@
 
 #include "libavcodec/avcodec.h"
 
+typedef struct AVVideotoolboxOpaque {
+    const void* id;
+    int width;
+    int height;
+} AVVideotoolboxOpaque;
+
 /**
  * This struct holds all the information that needs to be passed
  * between the caller and libavcodec for initializing Videotoolbox decoding.
@@ -121,7 +127,82 @@ int av_videotoolbox_default_init2(AVCodecContext *avctx, AVVideotoolboxContext *
 void av_videotoolbox_default_free(AVCodecContext *avctx);
 
 /**
+ * This is a convenience function that creates and sets up the AVVideotoolboxOpaque using
+ * an internal implementation.
+ * dealloc use av_freep()
+  */
+AVVideotoolboxOpaque *av_videotoolbox_create_opaque(void);
+
+/**
  * @}
  */
+
+typedef enum VT_H264Profile {
+    H264_PROF_AUTO,
+    H264_PROF_BASELINE,
+    H264_PROF_MAIN,
+    H264_PROF_HIGH,
+    H264_PROF_EXTENDED,
+    H264_PROF_COUNT
+} VT_H264Profile;
+
+typedef enum VTH264Entropy{
+    VT_ENTROPY_NOT_SET,
+    VT_CAVLC,
+    VT_CABAC
+} VTH264Entropy;
+
+typedef struct ExtraSEI {
+  void *data;
+  size_t size;
+} ExtraSEI;
+
+typedef struct BufNode {
+    CMSampleBufferRef cm_buffer;
+    ExtraSEI *sei;
+    struct BufNode* next;
+    int error;
+} BufNode;
+
+typedef struct VTEncContext {
+    AVClass *cls;
+    enum AVCodecID codec_id;
+    VTCompressionSessionRef session;
+    CFStringRef ycbcr_matrix;
+    CFStringRef color_primaries;
+    CFStringRef transfer_function;
+
+    pthread_mutex_t lock;
+    pthread_cond_t  cv_sample_sent;
+
+    int async_error;
+
+    BufNode *q_head;
+    BufNode *q_tail;
+
+    int64_t frame_ct_out;
+    int64_t frame_ct_in;
+
+    int64_t first_pts;
+    int64_t dts_delta;
+
+    int64_t profile;
+    int64_t level;
+    int64_t entropy;
+    int64_t realtime;
+    int64_t frames_before;
+    int64_t frames_after;
+
+    int64_t allow_sw;
+    int64_t require_sw;
+
+    bool flushing;
+    bool has_b_frames;
+    bool warned_color_range;
+    bool a53_cc;
+
+    double maxKeyFrameIntervalDuration;
+    bool enableRateLimits;
+} VTEncContext;
 
 #endif /* AVCODEC_VIDEOTOOLBOX_H */

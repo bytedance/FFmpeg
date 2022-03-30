@@ -331,7 +331,7 @@ static void export_stream_params(AVCodecContext *avctx, const HEVCParamSets *ps,
 
 static int set_sps(HEVCContext *s, const HEVCSPS *sps, enum AVPixelFormat pix_fmt)
 {
-    #define HWACCEL_MAX (CONFIG_HEVC_DXVA2_HWACCEL + CONFIG_HEVC_D3D11VA_HWACCEL + CONFIG_HEVC_VAAPI_HWACCEL + CONFIG_HEVC_VDPAU_HWACCEL)
+    #define HWACCEL_MAX (CONFIG_HEVC_DXVA2_HWACCEL + CONFIG_HEVC_D3D11VA_HWACCEL + CONFIG_HEVC_VAAPI_HWACCEL + CONFIG_HEVC_VDPAU_HWACCEL + CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL)
     enum AVPixelFormat pix_fmts[HWACCEL_MAX + 2], *fmt = pix_fmts;
     int ret, i;
 
@@ -363,6 +363,9 @@ static int set_sps(HEVCContext *s, const HEVCSPS *sps, enum AVPixelFormat pix_fm
 #if CONFIG_HEVC_VDPAU_HWACCEL
         *fmt++ = AV_PIX_FMT_VDPAU;
 #endif
+#if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
+        *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
+#endif
         break;
     case AV_PIX_FMT_YUV420P10:
 #if CONFIG_HEVC_DXVA2_HWACCEL
@@ -373,6 +376,9 @@ static int set_sps(HEVCContext *s, const HEVCSPS *sps, enum AVPixelFormat pix_fm
 #endif
 #if CONFIG_HEVC_VAAPI_HWACCEL
         *fmt++ = AV_PIX_FMT_VAAPI;
+#endif
+#if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
+        *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
         break;
     }
@@ -3097,7 +3103,7 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
     s->is_md5 = 0;
 
     if (s->is_decoded) {
-        av_log(avctx, AV_LOG_DEBUG, "Decoded frame with POC %d.\n", s->poc);
+        //av_log(avctx, AV_LOG_DEBUG, "Decoded frame with POC %d.\n", s->poc);
         s->is_decoded = 0;
     }
 

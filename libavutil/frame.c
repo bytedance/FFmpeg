@@ -137,6 +137,9 @@ static void free_side_data(AVFrameSideData **ptr_sd)
 
 static void wipe_side_data(AVFrame *frame)
 {
+    if (!frame)
+        return;
+
     int i;
 
     for (i = 0; i < frame->nb_side_data; i++) {

@@ -83,6 +83,12 @@ void av_aes_ctr_free(struct AVAESCTR *a)
     }
 }
 
+void av_aes_ctr_set_full_iv(struct AVAESCTR *a, const uint8_t* iv)
+{
+    memcpy(a->counter, iv, sizeof(a->counter));
+    a->block_offset = 0;
+}
+
 static void av_aes_ctr_increment_be64(uint8_t* counter)
 {
     uint8_t* cur_pos;

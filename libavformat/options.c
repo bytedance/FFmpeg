@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 #include "avformat.h"
 #include "avio_internal.h"
@@ -87,7 +90,10 @@ static AVClassCategory get_category(void *ptr)
     if(s->iformat) return AV_CLASS_CATEGORY_DEMUXER;
     else           return AV_CLASS_CATEGORY_MUXER;
 }
-
+static aptr_t avformat_get_aptr(void * ptr) {
+    AVFormatContext* s = ptr;
+    return s->aptr;
+}
 static const AVClass av_format_context_class = {
     .class_name     = "AVFormatContext",
     .item_name      = format_to_name,
@@ -97,6 +103,7 @@ static const AVClass av_format_context_class = {
     .child_class_next = format_child_class_next,
     .category       = AV_CLASS_CATEGORY_MUXER,
     .get_category   = get_category,
+    .get_aptr = avformat_get_aptr,
 };
 
 static int io_open_default(AVFormatContext *s, AVIOContext **pb,

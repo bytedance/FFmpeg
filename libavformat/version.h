@@ -97,7 +97,9 @@
 #ifndef FF_API_OLD_ROTATE_API
 #define FF_API_OLD_ROTATE_API           (LIBAVFORMAT_VERSION_MAJOR < 58)
 #endif
-
+#ifndef FF_API_FORMAT_FILENAME
+#define FF_API_FORMAT_FILENAME          (LIBAVFORMAT_VERSION_MAJOR < 58)
+#endif
 
 #ifndef FF_API_R_FRAME_RATE
 #define FF_API_R_FRAME_RATE            1

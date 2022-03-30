@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #ifndef AVFORMAT_HTTP_H
@@ -24,7 +27,7 @@
 
 #include "url.h"
 
-#define HTTP_HEADERS_SIZE 4096
+#define HTTP_HEADERS_SIZE 8192
 
 /**
  * Initialize the authentication state based on another HTTP URLContext.

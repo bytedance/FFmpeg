@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include "avformat.h"
@@ -25,10 +28,19 @@
 #include "libavutil/opt.h"
 #include "internal.h"
 #include "url.h"
-
+#if CONFIG_DRM
+#include "libavutil/drm.h"
+#endif
 // encourage reads of 4096 bytes - 1 block is always retained.
 #define MAX_BUFFER_BLOCKS 257
 #define BLOCKSIZE 16
+
+#ifndef DRM_FILE_HEADER
+#define DRM_FILE_HEADER     0x01
+#endif
+#ifndef DRM_FILE_END
+#define DRM_FILE_END        0x02
+#endif
 
 typedef struct CryptoContext {
     const AVClass *class;
@@ -58,6 +70,14 @@ typedef struct CryptoContext {
     unsigned int write_buf_size;
     uint8_t pad[BLOCKSIZE];
     int pad_len;
+    
+    void *cbptr;
+    int drm_downgrade;
+    int enable_intertrust_drm;
+    void *drm_aptr;
+    void *drm_ctx;
+    int first_block;
+    int segment_number;
 } CryptoContext;
 
 #define OFFSET(x) offsetof(CryptoContext, x)
@@ -70,6 +90,11 @@ static const AVOption options[] = {
     {"decryption_iv",  "AES decryption initialization vector", OFFSET(decrypt_iv),  AV_OPT_TYPE_BINARY, .flags = D },
     {"encryption_key", "AES encryption key",                   OFFSET(encrypt_key), AV_OPT_TYPE_BINARY, .flags = E },
     {"encryption_iv",  "AES encryption initialization vector", OFFSET(encrypt_iv),  AV_OPT_TYPE_BINARY, .flags = E },
+    {"cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_INT64, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D },
+    { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
+    {"enable_intertrust_drm", "enable intertrust drm", OFFSET(enable_intertrust_drm), AV_OPT_TYPE_BOOL,  { .i64 = 0 }, 0, 1, D },
+    {"drm_aptr", "drm aptr", OFFSET(drm_aptr), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, D },
+    {"segment_number", "segment number", OFFSET(segment_number), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
     { NULL }
 };
 
@@ -121,6 +146,11 @@ static int crypto_open2(URLContext *h, const char *uri, int flags, AVDictionary 
         goto err;
     }
 
+    av_log(h, AV_LOG_INFO, "testlog: crypto_open2, c->enable_intertrust_drm = %d", c->enable_intertrust_drm);
+    if (c->enable_intertrust_drm) {
+        c->drm_ctx = (void *)(intptr_t) c->drm_aptr;
+    }
+
     if (flags & AVIO_FLAG_READ) {
         if ((ret = set_aes_arg(h, &c->decrypt_key, &c->decrypt_keylen,
                                c->key, c->keylen, "decryption key")) < 0)
@@ -156,7 +186,8 @@ static int crypto_open2(URLContext *h, const char *uri, int flags, AVDictionary 
         ret = av_aes_init(c->aes_decrypt, c->decrypt_key, BLOCKSIZE * 8, 1);
         if (ret < 0)
             goto err;
-
+       
+        c->first_block = 1;
         // pass back information about the context we openned
         if (c->hd->is_streamed)
             h->is_streamed = c->hd->is_streamed;
@@ -183,7 +214,10 @@ err:
 static int crypto_read(URLContext *h, uint8_t *buf, int size)
 {
     CryptoContext *c = h->priv_data;
+    int flag = 0;
     int blocks;
+    int counts;
+    int res;
 retry:
     if (c->outdata > 0) {
         size = FFMIN(size, c->outdata);
@@ -204,6 +238,7 @@ retry:
             c->eof = 1;
             break;
         }
+        
         c->indata += n;
     }
     blocks = (c->indata - c->indata_used) / BLOCKSIZE;
@@ -211,8 +246,28 @@ retry:
         return AVERROR_EOF;
     if (!c->eof)
         blocks--;
-    av_aes_crypt(c->aes_decrypt, c->outbuffer, c->inbuffer + c->indata_used,
-                 blocks, c->decrypt_iv, 1);
+    res = 0;
+    if (c->enable_intertrust_drm) {
+#if CONFIG_DRM
+        counts = blocks * BLOCKSIZE;
+        if (c->first_block) {
+            flag |= DRM_FILE_HEADER;
+            c->first_block = 0;
+        }
+        if (c->eof)
+            flag |= DRM_FILE_END;
+
+        counts |= (flag << 16);
+        res = av_idrm_decrypt(c->cbptr, c->drm_ctx, c->inbuffer + c->indata_used,
+                counts, c->decrypt_iv, c->outbuffer);
+        if (res != 0 && (c->drm_downgrade == 0 || (c->drm_downgrade != 0 && !(flag & DRM_FILE_HEADER)))) 
+            return AVERROR_DRM_DECRYPT_FAILED;
+#endif
+    }
+    if (!c->enable_intertrust_drm || res != 0) {
+        av_aes_crypt(c->aes_decrypt, c->outbuffer, c->inbuffer + c->indata_used,
+                blocks, c->decrypt_iv, 1);
+    }
     c->outdata      = BLOCKSIZE * blocks;
     c->outptr       = c->outbuffer;
     c->indata_used += BLOCKSIZE * blocks;
@@ -375,7 +430,7 @@ static int crypto_close(URLContext *h)
 {
     CryptoContext *c = h->priv_data;
     int ret = 0;
-
+   
     if (c->aes_encrypt) {
         uint8_t out_buf[BLOCKSIZE];
         int pad = BLOCKSIZE - c->pad_len;
@@ -384,7 +439,7 @@ static int crypto_close(URLContext *h)
         av_aes_crypt(c->aes_encrypt, out_buf, c->pad, 1, c->encrypt_iv, 0);
         ret = ffurl_write(c->hd, out_buf, BLOCKSIZE);
     }
-
+    
     if (c->hd)
         ffurl_close(c->hd);
     av_freep(&c->aes_decrypt);

@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include <fcntl.h>
@@ -26,6 +29,187 @@
 #include "libavutil/avutil.h"
 #include "libavutil/mem.h"
 #include "libavutil/time.h"
+#include "libavutil/ttmapp.h"
+
+static getaddrinfo_a_ctx gGetAddrinfo_a= {
+    .start = NULL,
+    .result = NULL,
+    .free = NULL,
+    .save_ip = NULL,
+    .log_callback = NULL,
+    .io_callback  = NULL,
+    .info_callback = NULL,
+};
+static resourceLoader_ctx gResourceLoader= {
+    .open  = NULL,
+    .read  = NULL,
+    .seek  = NULL,
+    .close = NULL,
+};
+static int (*ff_custom_verify_callback)(void*, void*, const char*, int) = NULL;
+int ff_support_resourceloader() {
+    if(gResourceLoader.open == NULL || gResourceLoader.read == NULL ||
+       gResourceLoader.seek == NULL || gResourceLoader.close == NULL) {
+        return 0;
+    }
+    return 1;
+}
+int ff_support_getaddrinfo_a() {
+    if(gGetAddrinfo_a.start == NULL || gGetAddrinfo_a.result == NULL || gGetAddrinfo_a.free == NULL) {
+        return 0;
+    }
+    return 1;
+}
+
+int ff_isupport_getaddrinfo_a(uint64_t cb_ctx) {
+    if (cb_ctx == 0)
+        return ff_support_getaddrinfo_a();
+    else {
+        TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+        if (app_cb != NULL && app_cb->addr_start != NULL && app_cb->addr_result != NULL && app_cb->addr_free != NULL)
+            return 1;
+        else if(app_cb != NULL && app_cb->addr_start == NULL && app_cb->addr_result == NULL && app_cb->addr_free == NULL)
+            return ff_support_getaddrinfo_a();
+    }
+    return 0;
+}
+
+void ff_resourceloader_init(resource_loader_open open, resource_loader_read read, resource_loader_seek seek, resource_loader_close close) {
+    gResourceLoader.open  = open;
+    gResourceLoader.read  = read;
+    gResourceLoader.seek  = seek;
+    gResourceLoader.close = close;
+}
+
+void ff_getaddrinfo_a_init(getaddrinfo_a_start getinfo, getaddrinfo_a_result result,getaddrinfo_a_free end,
+                           save_host_addr save_ip,  network_log_callback log_callback, tcp_io_read_callback io_callback,
+                           network_info_callback info_callback) {
+    gGetAddrinfo_a.start = getinfo;
+    gGetAddrinfo_a.result = result;
+    gGetAddrinfo_a.free = end;
+    gGetAddrinfo_a.save_ip = save_ip;
+    gGetAddrinfo_a.log_callback = log_callback;
+    gGetAddrinfo_a.io_callback = io_callback;
+    gGetAddrinfo_a.info_callback = info_callback;
+}
+
+void ff_register_dns_parser(getaddrinfo_a_start getinfo, getaddrinfo_a_result result, getaddrinfo_a_free end) {
+    if (ff_support_getaddrinfo_a()) {
+        return;
+    }
+    gGetAddrinfo_a.start = getinfo;
+    gGetAddrinfo_a.result = result;
+    gGetAddrinfo_a.free = end;
+}
+
+void* ff_igetaddrinfo_a_start(uint64_t cb_ctx, uint64_t handle,const char* hostname, int user_flag) {
+    TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+    if (app_cb == NULL || app_cb->addr_start == NULL) {
+        if (ff_support_getaddrinfo_a()) {
+            return gGetAddrinfo_a.start(handle,hostname,user_flag);
+        } else {
+            return NULL;
+        }
+    } else {
+        if (app_cb && app_cb->addr_start != NULL) {
+            return app_cb->addr_start(handle, hostname, user_flag);
+        } else {
+            return NULL;
+        }
+    }
+}
+
+int ff_igetaddrinfo_a_result(uint64_t cb_ctx, void* ctx,char* ipaddress,int size) {
+    TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+    if (app_cb == NULL || app_cb->addr_result == NULL) {
+        if (ff_support_getaddrinfo_a()) {
+            return gGetAddrinfo_a.result(ctx,ipaddress,size);
+        } else {
+            return -1;
+        }
+    } else {
+        if (app_cb && app_cb->addr_result != NULL) {
+            return app_cb->addr_result(ctx, ipaddress, size);
+        } else {
+            return -1;
+        }
+    }
+}
+
+void ff_igetaddrinfo_a_free(uint64_t cb_ctx, void* ctx) {
+    TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+    if (app_cb == NULL || app_cb->addr_free == NULL) {
+        if (ff_support_getaddrinfo_a()) {
+            gGetAddrinfo_a.free(ctx);
+        }
+    } else {
+        if (app_cb && app_cb->addr_free != NULL) {
+            app_cb->addr_free(ctx);
+        }
+    }
+}
+
+void ff_isave_host_addr(uint64_t cb_ctx, aptr_t handle, const char* ip, int user_flag) {
+    if (cb_ctx == 0) {
+        if (gGetAddrinfo_a.save_ip != NULL) {
+            gGetAddrinfo_a.save_ip(handle, ip, user_flag);
+        }
+    } else {
+        TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+        if (app_cb && app_cb->save_ip != NULL) {
+            app_cb->save_ip(handle, ip, user_flag);
+        }
+    }
+}
+
+void ff_inetwork_log_callback(uint64_t cb_ctx, aptr_t handle, int type, int user_flag) {
+    if (cb_ctx == 0) {
+        if (gGetAddrinfo_a.log_callback != NULL) {
+            gGetAddrinfo_a.log_callback(handle, type, user_flag);
+        }
+    } else {
+        TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+        if (app_cb && app_cb->log_callback != NULL) {
+            app_cb->log_callback(handle, type, user_flag);
+        }
+    }
+}
+
+void ff_inetwork_io_read_callback(uint64_t cb_ctx, aptr_t handle, int type, int size) {
+    if (cb_ctx == 0) {
+        if (gGetAddrinfo_a.io_callback != NULL && size > 0) {
+            gGetAddrinfo_a.io_callback(handle, type, size);
+        }
+    } else {
+        TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+        if (app_cb && app_cb->io_callback != NULL) {
+            app_cb->io_callback(handle, type, size);
+        }
+    }
+}
+
+void ff_inetwork_info_callback(uint64_t cb_ctx, aptr_t handle, int key, int64_t value, const char* strValue) {
+    if (cb_ctx == 0) {
+        if (gGetAddrinfo_a.info_callback != NULL) {
+            gGetAddrinfo_a.info_callback(handle, key, value, strValue);
+        }
+    } else {
+        TTmAppCallbackCtx *app_cb = av_ttm_app_cast(cb_ctx);
+        if (app_cb && app_cb->info_callback != NULL) {
+            app_cb->info_callback(handle, key, value, strValue);
+        }
+    }
+}
+
+void ff_set_custom_verify_callback(int (*callback)(void*, void*, const char*, int)) {
+    ff_custom_verify_callback = callback;
+}
+int ff_do_custom_verify_callback(void* context, void* ssl, const char* host, int port) {
+    if (ff_custom_verify_callback != NULL) {
+        return ff_custom_verify_callback(context, ssl, host, port);
+    }
+    return 0;
+}
 
 int ff_tls_init(void)
 {
@@ -79,6 +263,17 @@ int ff_network_wait_fd(int fd, int write)
     return ret < 0 ? ff_neterrno() : p.revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
 }
 
+static int ff_network_wait_fds(int fd0,int fd1,int write)
+{
+    int ev = write ? POLLOUT : POLLIN;
+    struct pollfd p[2] = {
+		{ .fd = fd0, .events = ev, .revents = 0 },
+		{ .fd = fd1, .events = ev, .revents = 0 }
+		};
+    int ret;
+    ret = poll(&p, 2, POLLING_TIME);
+    return ret < 0 ? ff_neterrno() : p[0].revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
+}
 int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterruptCB *int_cb)
 {
     int ret;
@@ -87,7 +282,8 @@ int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterrupt
     while (1) {
         if (ff_check_interrupt(int_cb))
             return AVERROR_EXIT;
-        ret = ff_network_wait_fd(fd, write);
+	
+        ret = int_cb>0 && int_cb->fd > 0? ff_network_wait_fds(fd,int_cb->fd,write):ff_network_wait_fd(fd, write);
         if (ret != AVERROR(EAGAIN))
             return ret;
         if (timeout > 0) {
@@ -235,7 +431,85 @@ int ff_listen_bind(int fd, const struct sockaddr *addr,
     return ret;
 }
 
+static int ff_listen_connect_internal(int fd, const struct sockaddr *addr,
+                               socklen_t addrlen, int fast_open)
+{
+#if defined(__APPLE__)
+    sa_endpoints_t endpoints;
+    if (fast_open) {
+        endpoints.sae_srcif = 0;
+        endpoints.sae_srcaddr = NULL;
+        endpoints.sae_srcaddrlen = 0;
+        endpoints.sae_dstaddr = addr;
+        endpoints.sae_dstaddrlen = addrlen;
+        return connectx(fd, &endpoints, SAE_ASSOCID_ANY, CONNECT_RESUME_ON_READ_WRITE | CONNECT_DATA_IDEMPOTENT, NULL, 0, NULL, NULL);
+    }
+#endif
+    return connect(fd, addr, addrlen);
+}
+
+int ff_listen_connect2(int fd, const struct sockaddr *addr,
+                      socklen_t addrlen, int timeout, URLContext *h,
+                      int will_try_next, int fast_open)
+{
+    struct pollfd p = {fd, POLLOUT, 0};
+    int ret;
+    socklen_t optlen;
+
+    if (ff_socket_nonblock(fd, 1) < 0)
+        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
+    
+    while ((ret = ff_listen_connect_internal(fd, addr, addrlen, fast_open))) {
+        ret = ff_neterrno();
+        switch (ret) {
+        case AVERROR(EINTR):
+            if (ff_check_interrupt(&h->interrupt_callback))
+                return AVERROR_EXIT;
+            continue;
+        case AVERROR(EINPROGRESS):
+        case AVERROR(EAGAIN):
+            ret = ff_poll_interrupt(&p, 1, timeout, &h->interrupt_callback);
+            if (ret < 0) {
+                av_fatal(h, AVERROR_FF_SOCKET_CONNECT_FAILED, "ret:%d neterrno:%d ff_poll_interrupt error", ret, ff_neterrno());
+                return ret;
+            }
+            optlen = sizeof(ret);
+            if (getsockopt (fd, SOL_SOCKET, SO_ERROR, &ret, &optlen)) {
+                av_fatal(h, AVERROR_FF_SOCKET_CONNECT_FAILED, "ret:%d neterrno:%d getsockop error", ret, ff_neterrno());
+                ret = AVUNERROR(ff_neterrno());
+            }
+            if (ret != 0) {
+                char errbuf[100];
+                ret = AVERROR(ret);
+                av_strerror(ret, errbuf, sizeof(errbuf));
+                if (will_try_next)
+                    av_log(h, AV_LOG_WARNING,
+                           "Connection to %s failed (%s), trying next address\n",
+                           h->filename, errbuf);
+                else {
+                    av_fatal(h, AVERROR_FF_SOCKET_CONNECT_FAILED, "ret:%d neterrno:%d Connection to %s failed: %s\n", ret, ff_neterrno(), h->filename, errbuf);
+                }
+            }
+            return ret;
+        default:
+            if (ret < 0 ) {
+                av_fatal(h, AVERROR_FF_SOCKET_CONNECT_FAILED, "ret:%d neterrno:%d default error", ret, ff_neterrno());
+            }
+            return ret;
+        }
+    }
+    return ret;
+}
+
 int ff_listen_connect(int fd, const struct sockaddr *addr,
+                      socklen_t addrlen, int timeout, URLContext *h,
+                      int will_try_next)
+{
+    return ff_listen_connect2(fd, addr, addrlen, timeout, h, will_try_next, 0);
+}
+
+int ff_sendto(int fd, const char *msg, int msg_len, int flag,
+                      const struct sockaddr *addr,
                       socklen_t addrlen, int timeout, URLContext *h,
                       int will_try_next)
 {
@@ -244,9 +518,9 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
     socklen_t optlen;
 
     if (ff_socket_nonblock(fd, 1) < 0)
-        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
+        av_log(NULL, AV_LOG_INFO, "ff_socket_nonblock failed\n");
 
-    while ((ret = connect(fd, addr, addrlen))) {
+    while ((ret = sendto(fd, msg, msg_len, flag, addr, addrlen)) < 0) {
         ret = ff_neterrno();
         switch (ret) {
         case AVERROR(EINTR):

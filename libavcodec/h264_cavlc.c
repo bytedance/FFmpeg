@@ -714,8 +714,14 @@ int ff_h264_decode_mb_cavlc(const H264Context *h, H264SliceContext *sl)
     cbp = 0; /* avoid warning. FIXME: find a solution without slowing
                 down the code */
     if (sl->slice_type_nos != AV_PICTURE_TYPE_I) {
-        if (sl->mb_skip_run == -1)
-            sl->mb_skip_run = get_ue_golomb_long(&sl->gb);
+        if (sl->mb_skip_run == -1) {
+            unsigned mb_skip_run = get_ue_golomb_long(&sl->gb);
+            if (mb_skip_run > h->mb_num) {
+                av_log(h->avctx, AV_LOG_ERROR, "mb_skip_run %d is invalid\n", mb_skip_run);
+                return AVERROR_INVALIDDATA;
+            }
+            sl->mb_skip_run = mb_skip_run;
+        }
 
         if (sl->mb_skip_run--) {
             if (FRAME_MBAFF(h) && (sl->mb_y & 1) == 0) {
@@ -1102,14 +1108,6 @@ decode_intra_mb:
         const uint8_t *scan, *scan8x8;
         const int max_qp = 51 + 6 * (h->ps.sps->bit_depth_luma - 8);
 
-        if(IS_INTERLACED(mb_type)){
-            scan8x8 = sl->qscale ? h->field_scan8x8_cavlc : h->field_scan8x8_cavlc_q0;
-            scan    = sl->qscale ? h->field_scan : h->field_scan_q0;
-        }else{
-            scan8x8 = sl->qscale ? h->zigzag_scan8x8_cavlc : h->zigzag_scan8x8_cavlc_q0;
-            scan    = sl->qscale ? h->zigzag_scan : h->zigzag_scan_q0;
-        }
-
         dquant= get_se_golomb(&sl->gb);
 
         sl->qscale += (unsigned)dquant;
@@ -1119,12 +1117,21 @@ decode_intra_mb:
             else                sl->qscale -= max_qp+1;
             if (((unsigned)sl->qscale) > max_qp){
                 av_log(h->avctx, AV_LOG_ERROR, "dquant out of range (%d) at %d %d\n", dquant, sl->mb_x, sl->mb_y);
+                sl->qscale = max_qp;
                 return -1;
             }
         }
 
         sl->chroma_qp[0] = get_chroma_qp(h->ps.pps, 0, sl->qscale);
         sl->chroma_qp[1] = get_chroma_qp(h->ps.pps, 1, sl->qscale);
+
+        if(IS_INTERLACED(mb_type)){
+            scan8x8 = sl->qscale ? h->field_scan8x8_cavlc : h->field_scan8x8_cavlc_q0;
+            scan    = sl->qscale ? h->field_scan : h->field_scan_q0;
+        }else{
+            scan8x8 = sl->qscale ? h->zigzag_scan8x8_cavlc : h->zigzag_scan8x8_cavlc_q0;
+            scan    = sl->qscale ? h->zigzag_scan : h->zigzag_scan_q0;
+        }
 
         if ((ret = decode_luma_residual(h, sl, gb, scan, scan8x8, pixel_shift, mb_type, cbp, 0)) < 0 ) {
             return -1;

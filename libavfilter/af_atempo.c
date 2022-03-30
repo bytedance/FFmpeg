@@ -153,7 +153,7 @@ typedef struct {
 
 static const AVOption atempo_options[] = {
     { "tempo", "set tempo scale factor",
-      OFFSET(tempo), AV_OPT_TYPE_DOUBLE, { .dbl = 1.0 }, 0.5, 2.0,
+      OFFSET(tempo), AV_OPT_TYPE_DOUBLE, { .dbl = 1.0 }, 0.1, 3.0,
       AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_FILTERING_PARAM },
     { NULL }
 };

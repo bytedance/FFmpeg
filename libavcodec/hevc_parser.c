@@ -52,36 +52,94 @@ static int hevc_parse_slice_header(AVCodecParserContext *s, H2645NAL *nal,
                                    AVCodecContext *avctx)
 {
     HEVCParserContext *ctx = s->priv_data;
+    HEVCParamSets *ps = &ctx->ps;
     GetBitContext *gb = &nal->gb;
+    const HEVCWindow *ow;
+    int i, num = 0, den = 0;
 
-    HEVCPPS *pps;
-    HEVCSPS *sps;
-    unsigned int pps_id;
+    unsigned int pps_id, first_slice_in_pic_flag, dependent_slice_segment_flag;
+    enum HEVCSliceType slice_type;
 
-    get_bits1(gb);          // first slice in pic
-    if (IS_IRAP_NAL(nal))
-        get_bits1(gb);      // no output of prior pics
+    first_slice_in_pic_flag = get_bits1(gb);          // first slice in pic
+    if (IS_IRAP_NAL(nal)) {
+        s->key_frame = 1;
+        skip_bits1(gb); // no_output_of_prior_pics_flag
+    }
 
-    pps_id = get_ue_golomb_long(gb);
-    if (pps_id >= HEVC_MAX_PPS_COUNT || !ctx->ps.pps_list[pps_id]) {
+    pps_id = get_ue_golomb(gb);
+    if (pps_id >= HEVC_MAX_PPS_COUNT || !ps->pps_list[pps_id]) {
         av_log(avctx, AV_LOG_ERROR, "PPS id out of range: %d\n", pps_id);
         return AVERROR_INVALIDDATA;
     }
-    pps = (HEVCPPS*)ctx->ps.pps_list[pps_id]->data;
-    sps = (HEVCSPS*)ctx->ps.sps_list[pps->sps_id]->data;
+    ps->pps = (HEVCPPS*)ps->pps_list[pps_id]->data;
 
-    /* export the stream parameters */
-    s->coded_width  = sps->width;
-    s->coded_height = sps->height;
-    s->width        = sps->output_width;
-    s->height       = sps->output_height;
-    s->format       = sps->pix_fmt;
-    avctx->profile  = sps->ptl.general_ptl.profile_idc;
-    avctx->level    = sps->ptl.general_ptl.level_idc;
+    if (ps->pps->sps_id >= HEVC_MAX_SPS_COUNT || !ps->sps_list[ps->pps->sps_id]) {
+        av_log(avctx, AV_LOG_ERROR, "SPS id out of range: %d\n", ps->pps->sps_id);
+        return AVERROR_INVALIDDATA;
+    }
+    if (ps->sps != (HEVCSPS*)ps->sps_list[ps->pps->sps_id]->data) {
+        ps->sps = (HEVCSPS*)ps->sps_list[ps->pps->sps_id]->data;
+        ps->vps = (HEVCVPS*)ps->vps_list[ps->sps->vps_id]->data;
+    }
+    ow  = &ps->sps->output_window;
 
-    /* ignore the rest for now*/
+    s->coded_width  = ps->sps->width;
+    s->coded_height = ps->sps->height;
+    s->width        = ps->sps->width  - ow->left_offset - ow->right_offset;
+    s->height       = ps->sps->height - ow->top_offset  - ow->bottom_offset;
+    s->format       = ps->sps->pix_fmt;
+    avctx->profile  = ps->sps->ptl.general_ptl.profile_idc;
+    avctx->level    = ps->sps->ptl.general_ptl.level_idc;
 
-    return 0;
+    if (ps->vps->vps_timing_info_present_flag) {
+        num = ps->vps->vps_num_units_in_tick;
+        den = ps->vps->vps_time_scale;
+    } else if (ps->sps->vui.vui_timing_info_present_flag) {
+        num = ps->sps->vui.vui_num_units_in_tick;
+        den = ps->sps->vui.vui_time_scale;
+    }
+
+    if (num != 0 && den != 0)
+        av_reduce(&avctx->framerate.den, &avctx->framerate.num,
+                  num, den, 1 << 30);
+
+    if (!first_slice_in_pic_flag) {
+        unsigned int slice_segment_addr;
+        int slice_address_length;
+
+        if (ps->pps->dependent_slice_segments_enabled_flag)
+            dependent_slice_segment_flag = get_bits1(gb);
+        else
+            dependent_slice_segment_flag = 0;
+
+        slice_address_length = av_ceil_log2_c(ps->sps->ctb_width *
+                                              ps->sps->ctb_height);
+        slice_segment_addr = get_bitsz(gb, slice_address_length);
+        if (slice_segment_addr >= ps->sps->ctb_width * ps->sps->ctb_height) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid slice segment address: %u.\n",
+                   slice_segment_addr);
+            return AVERROR_INVALIDDATA;
+        }
+    } else
+        dependent_slice_segment_flag = 0;
+
+    if (dependent_slice_segment_flag)
+        return 0; /* break; */
+
+    for (i = 0; i < ps->pps->num_extra_slice_header_bits; i++)
+        skip_bits(gb, 1); // slice_reserved_undetermined_flag[]
+
+    slice_type = get_ue_golomb(gb);
+    if (!(slice_type == HEVC_SLICE_I || slice_type == HEVC_SLICE_P ||
+          slice_type == HEVC_SLICE_B)) {
+        av_log(avctx, AV_LOG_ERROR, "Unknown slice type: %d.\n",
+               slice_type);
+        return AVERROR_INVALIDDATA;
+    }
+    s->pict_type = slice_type == HEVC_SLICE_B ? AV_PICTURE_TYPE_B :
+                   slice_type == HEVC_SLICE_P ? AV_PICTURE_TYPE_P :
+                                                AV_PICTURE_TYPE_I;				
+	return 0;
 }
 
 static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
@@ -89,6 +147,11 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
 {
     HEVCParserContext *ctx = s->priv_data;
     int ret, i;
+
+    /* set some sane default values */
+    s->pict_type         = AV_PICTURE_TYPE_I;
+    s->key_frame         = 0;
+    s->picture_structure = AV_PICTURE_STRUCTURE_UNKNOWN;
 
     ret = ff_h2645_packet_split(&ctx->pkt, buf, buf_size, avctx, 0, 0,
                                 AV_CODEC_ID_HEVC, 1);

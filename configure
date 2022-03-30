@@ -1150,6 +1150,9 @@ check_func_headers(){
     log check_func_headers "$@"
     headers=$1
     funcs=$2
+    if [ "$2"x = "clock_gettime"x ]; then
+       return 0
+    fi
     shift 2
     {
         for hdr in $headers; do
@@ -1581,6 +1584,7 @@ EXTERNAL_LIBRARY_LIST="
     libvpx
     libwavpack
     libwebp
+    libwebp_extra_static
     libzimg
     libzmq
     libzvbi
@@ -1590,6 +1594,7 @@ EXTERNAL_LIBRARY_LIST="
     opencl
     opengl
     videotoolbox
+    drm
 "
 HWACCEL_AUTODETECT_LIBRARY_LIST="
     audiotoolbox
@@ -1636,6 +1641,7 @@ FEATURE_LIST="
     small
     static
     swscale_alpha
+    lite
 "
 
 LIBRARY_LIST="
@@ -1697,6 +1703,7 @@ CONFIG_LIST="
     thumb
     valgrind_backtrace
     xmm_clobber_test
+    boringsslverify
 "
 
 THREADS_LIST="
@@ -2025,6 +2032,7 @@ TOOLCHAIN_FEATURES="
 
 TYPES_LIST="
     CONDITION_VARIABLE_Ptr
+    kCMVideoCodecType_HEVC
     socklen_t
     struct_addrinfo
     struct_group_source_req
@@ -2358,7 +2366,7 @@ vc1dsp_select="h264chroma qpeldsp startcode"
 rdft_select="fft"
 
 # decoders / encoders
-aac_decoder_select="mdct15 mdct sinewin"
+aac_decoder_select="audio_frame_queue mdct15 mdct sinewin"
 aac_fixed_decoder_select="mdct sinewin"
 aac_encoder_select="audio_frame_queue iirfilter lpc mdct sinewin"
 aac_latm_decoder_select="aac_decoder aac_latm_parser"
@@ -2650,6 +2658,8 @@ hevc_vaapi_hwaccel_deps="vaapi VAPictureParameterBufferHEVC"
 hevc_vaapi_hwaccel_select="hevc_decoder"
 hevc_vdpau_hwaccel_deps="vdpau VdpPictureInfoHEVC"
 hevc_vdpau_hwaccel_select="hevc_decoder"
+hevc_videotoolbox_hwaccel_deps="videotoolbox"
+hevc_videotoolbox_hwaccel_select="hevc_decoder"
 mjpeg_cuvid_hwaccel_deps="cuda cuvid"
 mjpeg_cuvid_hwaccel_select="mjpeg_cuvid_decoder"
 mjpeg_vaapi_encoder_deps="VAEncPictureParameterBufferJPEG"
@@ -3079,6 +3089,7 @@ udp_protocol_select="network"
 udplite_protocol_select="network"
 unix_protocol_deps="sys_un_h"
 unix_protocol_select="network"
+mediadatasource_protocol_deps="jni"
 
 # filters
 afftfilt_filter_deps="avcodec"
@@ -4690,7 +4701,12 @@ else
     check_cflags -std=c99
 fi
 
-check_cc -D_FILE_OFFSET_BITS=64 <<EOF && add_cppflags -D_FILE_OFFSET_BITS=64
+file_bits=64
+if [ "$arch" = "arm" ]; then
+    file_bits=32
+fi
+echo "check dayin: $file_bits , arch = $arch"
+check_cc -D_FILE_OFFSET_BITS=$file_bits <<EOF && add_cppflags -D_FILE_OFFSET_BITS=$file_bits
 #include <stdlib.h>
 EOF
 check_cc -D_LARGEFILE_SOURCE <<EOF && add_cppflags -D_LARGEFILE_SOURCE
@@ -5655,6 +5671,7 @@ check_header VideoDecodeAcceleration/VDADecoder.h
 check_header VideoToolbox/VideoToolbox.h
 check_func_headers VideoToolbox/VTCompressionSession.h VTCompressionSessionPrepareToEncodeFrames -framework VideoToolbox
 enabled videotoolbox && check_func_headers CoreVideo/CVImageBuffer.h kCVImageBufferColorPrimaries_ITU_R_2020 -framework CoreVideo
+enabled videotoolbox && check_func_headers CoreMedia/CMFormatDescription.h kCMVideoCodecType_HEVC -framework CoreMedia
 check_header windows.h
 check_header X11/extensions/XvMClib.h
 check_header asm/types.h
@@ -5812,7 +5829,7 @@ enabled libopenjpeg       && { { check_lib openjpeg-2.1/openjpeg.h opj_version -
                                { check_lib openjpeg.h opj_version -lopenjpeg -DOPJ_STATIC && add_cppflags -DOPJ_STATIC; } ||
                                die "ERROR: libopenjpeg not found"; }
 enabled libopenmpt        && require_pkg_config "libopenmpt >= 0.2.6557" libopenmpt/libopenmpt.h openmpt_module_create
-enabled libopus           && require_pkg_config opus opus_multistream.h opus_multistream_decoder_create
+#enabled libopus           && require_pkg_config opus opus_multistream.h opus_multistream_decoder_create
 enabled libpulse          && require_pkg_config libpulse pulse/pulseaudio.h pa_context_new
 enabled librtmp           && require_pkg_config librtmp librtmp/rtmp.h RTMP_Socket
 enabled librubberband     && require_pkg_config "rubberband >= 1.8.1" rubberband/rubberband-c.h rubberband_new
@@ -5862,8 +5879,15 @@ enabled libvpx            && {
 
 enabled libwavpack        && require libwavpack wavpack/wavpack.h WavpackOpenFileOutput  -lwavpack
 enabled libwebp           && {
+  # building libwebp for mobile platform needs the extra static libary
+  if ! enabled libwebp_extra_static; then {
     enabled libwebp_encoder      && require_pkg_config "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
-    enabled libwebp_anim_encoder && { use_pkg_config "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit || disable libwebp_anim_encoder; } }
+    enabled libwebp_anim_encoder && { use_pkg_config "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit || disable libwebp_anim_encoder; }
+  }
+  else
+    enabled libwebp_anim_encoder
+  fi
+}
 enabled libx264           && { use_pkg_config x264 "stdint.h x264.h" x264_encoder_encode ||
                                { require libx264 "stdint.h x264.h" x264_encoder_encode -lx264 &&
                                  warn "using libx264 without pkg-config"; } } &&
@@ -5882,6 +5906,7 @@ enabled libzvbi           && require libzvbi libzvbi.h vbi_decoder_new -lzvbi &&
                              { check_cpp_condition libzvbi.h "VBI_VERSION_MAJOR > 0 || VBI_VERSION_MINOR > 2 || VBI_VERSION_MINOR == 2 && VBI_VERSION_MICRO >= 28" ||
                                enabled gpl || die "ERROR: libzvbi requires version 0.2.28 or --enable-gpl."; }
 enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; }
+enabled mediadatasource   && { enabled jni || die "ERROR: mediadatasource requires --enable-jni"; }
 enabled mmal              && { check_lib interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
                                 { ! enabled cross_compile && {
                                     add_cflags -isystem/opt/vc/include/ -isystem/opt/vc/include/interface/vmcs_host/linux -isystem/opt/vc/include/interface/vcos/pthreads -fgnu89-inline ;
@@ -5917,9 +5942,12 @@ enabled omx               && { check_header OMX_Core.h ||
                                die "ERROR: OpenMAX IL headers not found"; }
 enabled openssl           && { use_pkg_config openssl openssl/ssl.h OPENSSL_init_ssl ||
                                use_pkg_config openssl openssl/ssl.h SSL_library_init ||
+                               check_lib openssl/ssl.h SSL_library_init -lttopenssl ||
+                               check_lib openssl/ssl.h SSL_library_init -lttcrypto -lttboringssl ||
                                check_lib openssl/ssl.h SSL_library_init -lssl -lcrypto ||
-                               check_lib openssl/ssl.h SSL_library_init -lssl32 -leay32 ||
-                               check_lib openssl/ssl.h SSL_library_init -lssl -lcrypto -lws2_32 -lgdi32 ||
+                               check_lib openssl/ssl.h OPENSSL_init_ssl -lboringssl -lboringssl_asm -lcrcrypto -lc++ ||
+                               check_lib openssl/ssl.h OPENSSL_init_ssl -framework boringssl -framework crypto -lc++ ||
+                               check_lib openssl/ssl.h OPENSSL_init_ssl -lssl -lboringssl_asm -lcrypto -lc++ ||
                                die "ERROR: openssl not found"; }
 enabled qtkit_indev      && { check_header_objcc QTKit/QTKit.h || disable qtkit_indev; }
 

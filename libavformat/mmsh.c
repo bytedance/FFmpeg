@@ -403,7 +403,8 @@ static int64_t mmsh_seek(URLContext *h, int64_t pos, int whence)
 {
     MMSHContext *mmsh = h->priv_data;
     MMSContext *mms   = &mmsh->mms;
-
+    if(whence == AVSEEK_ADDR || whence == AVSEEK_CPSIZE || whence == AVSEEK_SETDUR)
+        return -1;
     if(pos == 0 && whence == SEEK_CUR)
         return mms->asf_header_read_size + mms->remaining_in_len + mmsh->chunk_seq * (int64_t)mms->asf_packet_len;
     return AVERROR(ENOSYS);

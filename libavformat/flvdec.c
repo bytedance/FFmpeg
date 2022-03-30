@@ -70,6 +70,10 @@ typedef struct FLVContext {
     int64_t *keyframe_filepositions;
     int missing_streams;
     AVRational framerate;
+
+    int  check_corrupt_packet;
+    int  skip_find_unnecessary_stream;
+    int  head_flags;
 } FLVContext;
 
 static int probe(AVProbeData *p, int live)
@@ -141,8 +145,27 @@ static AVStream *create_stream(AVFormatContext *s, int codec_type)
     st->codecpar->codec_type = codec_type;
     if (s->nb_streams>=3 ||(   s->nb_streams==2
                            && s->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE
-                           && s->streams[1]->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE))
+                           && s->streams[1]->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE)) {
         s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+    } else {
+        av_log(s, AV_LOG_DEBUG, "skip_find_unnecessary_stream = %d", flv->skip_find_unnecessary_stream);
+        if (flv->skip_find_unnecessary_stream) {
+            if (flv->head_flags == FLV_HEADER_FLAG_HASVIDEO // only video
+                && ((s->nb_streams == 1 && s->streams[0]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                    || (s->nb_streams == 2 && s->streams[1]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO))
+            ) {
+                s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+            }
+
+            if (flv->head_flags == FLV_HEADER_FLAG_HASAUDIO // only audio
+                && ((s->nb_streams == 1 && s->streams[0]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                    || (s->nb_streams == 2 && s->streams[1]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO))
+            ) {
+                s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+            }
+        }
+    }
+
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
         st->codecpar->bit_rate = flv->audio_bit_rate;
         flv->missing_streams &= ~FLV_HEADER_FLAG_HASAUDIO;
@@ -291,6 +314,8 @@ static int flv_same_video_codec(AVCodecParameters *vpar, int flags)
         return vpar->codec_id == AV_CODEC_ID_VP6A;
     case FLV_CODECID_H264:
         return vpar->codec_id == AV_CODEC_ID_H264;
+    case FLV_CODECID_HEVC:
+        return vpar->codec_id == AV_CODEC_ID_HEVC;
     default:
         return vpar->codec_tag == flv_codecid;
     }
@@ -330,6 +355,11 @@ static int flv_set_video_codec(AVFormatContext *s, AVStream *vstream,
                 avio_skip(s->pb, 1);
         }
         ret = 1;     // 1 byte body size adjustment for flv_read_packet()
+        break;
+    case FLV_CODECID_HEVC:
+        par->codec_id = AV_CODEC_ID_HEVC;
+        vstream->need_parsing = AVSTREAM_PARSE_NONE;
+        ret = 3;     // not 4, reading packet type will consume one byte
         break;
     case FLV_CODECID_H264:
         par->codec_id = AV_CODEC_ID_H264;
@@ -713,7 +743,7 @@ static int flv_read_header(AVFormatContext *s)
 
     avio_skip(s->pb, 4);
     flags = avio_r8(s->pb);
-
+    flv->head_flags = flags;
     flv->missing_streams = flags & (FLV_HEADER_FLAG_HASVIDEO | FLV_HEADER_FLAG_HASAUDIO);
 
     s->ctx_flags |= AVFMTCTX_NOHEADER;
@@ -948,7 +978,7 @@ retry:
         dts  = avio_rb24(s->pb);
         dts |= (unsigned)avio_r8(s->pb) << 24;
         av_log(s, AV_LOG_TRACE, "type:%d, size:%d, last:%d, dts:%"PRId64" pos:%"PRId64"\n", type, size, last, dts, avio_tell(s->pb));
-        if (avio_feof(s->pb))
+        if (avio_feof_nonecheck(s->pb))
             return AVERROR_EOF;
         avio_skip(s->pb, 3); /* stream id, always 0 */
         flags = 0;
@@ -1142,10 +1172,11 @@ retry_duration:
 
     if (st->codecpar->codec_id == AV_CODEC_ID_AAC ||
         st->codecpar->codec_id == AV_CODEC_ID_H264 ||
-        st->codecpar->codec_id == AV_CODEC_ID_MPEG4) {
+        st->codecpar->codec_id == AV_CODEC_ID_MPEG4 ||
+        st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
         int type = avio_r8(s->pb);
         size--;
-        if (st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_MPEG4) {
+        if (st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_MPEG4 || st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
             // sign extension
             int32_t cts = (avio_rb24(s->pb) + 0xff800000) ^ 0xff800000;
             pts = dts + cts;
@@ -1161,7 +1192,7 @@ retry_duration:
             }
         }
         if (type == 0 && (!st->codecpar->extradata || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
-            st->codecpar->codec_id == AV_CODEC_ID_H264)) {
+            st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC)) {
             AVDictionaryEntry *t;
 
             if (st->codecpar->extradata) {
@@ -1208,6 +1239,7 @@ retry_duration:
     ret = av_get_packet(s->pb, pkt, size);
     if (ret < 0)
         return ret;
+    
     pkt->dts          = dts;
     pkt->pts          = pts == AV_NOPTS_VALUE ? dts : pts;
     pkt->stream_index = st->index;
@@ -1234,6 +1266,11 @@ retry_duration:
             ((flags & FLV_VIDEO_FRAMETYPE_MASK) == FLV_FRAME_KEY) ||
             stream_type == FLV_STREAM_TYPE_DATA)
         pkt->flags |= AV_PKT_FLAG_KEY;
+
+     // packet reading corrupt   
+    // av_log(s, AV_LOG_DEBUG, "check_corrupt_packet:%d\n", flv->check_corrupt_packet);
+    if (flv->check_corrupt_packet && (pkt->flags & AV_PKT_FLAG_CORRUPT))
+        return ret;
 
 leave:
     last = avio_rb32(s->pb);
@@ -1262,9 +1299,13 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 
 #define OFFSET(x) offsetof(FLVContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+#define D AV_OPT_FLAG_DECODING_PARAM
+#define E AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     { "flv_metadata", "Allocate streams according to the onMetaData array", OFFSET(trust_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
+    { "check_corrupt_packet", "enable check_corrupt_packet",          OFFSET(check_corrupt_packet), AV_OPT_TYPE_INT, { .i64 = 0},       0, INT_MAX, .flags = D|E },
+    { "skip_find_unnecessary_stream", "skip find unnecessary stream", OFFSET(skip_find_unnecessary_stream), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = D|E},
     { NULL }
 };
 

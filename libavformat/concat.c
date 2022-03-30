@@ -173,6 +173,10 @@ static int64_t concat_seek(URLContext *h, int64_t pos, int whence)
         for (i = 0; i != data->length - 1 && pos >= nodes[i].size; i++)
             pos -= nodes[i].size;
         break;
+    case AVSEEK_SETDUR:
+    case AVSEEK_ADDR:
+    case AVSEEK_CPSIZE:
+	return -1;
     default:
         return AVERROR(EINVAL);
     }

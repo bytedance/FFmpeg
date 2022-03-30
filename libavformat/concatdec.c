@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include "libavutil/avassert.h"
@@ -64,6 +67,8 @@ typedef struct {
     ConcatMatchMode stream_match_mode;
     unsigned auto_convert;
     int segment_time_metadata;
+    AVDictionary *options;
+    int error;
 } ConcatContext;
 
 static int concat_probe(AVProbeData *probe)
@@ -316,27 +321,52 @@ static int open_file(AVFormatContext *avf, unsigned fileno)
 {
     ConcatContext *cat = avf->priv_data;
     ConcatFile *file = &cat->files[fileno];
+    AVFormatContext *new_avf = NULL;
     int ret;
+    AVDictionary *tmp = NULL;
+    AVDictionaryEntry *t = NULL;
+    int fps_flag = 0;
+
+    new_avf = avformat_alloc_context();
+    if (!new_avf)
+        return AVERROR(ENOMEM);
+
+    new_avf->flags |= avf->flags;
+    new_avf->interrupt_callback = avf->interrupt_callback;
+
+    if ((ret = ff_copy_whiteblacklists(new_avf, avf)) < 0)
+        return ret;
+
+    if (cat->options)
+        av_dict_copy(&tmp, cat->options, 0);
+
+    av_dict_set_int(&tmp, "cur_file_no", fileno, 0);
+
+    t = av_dict_get(tmp, "skip-calc-frame-rate", NULL, AV_DICT_MATCH_CASE);
+    if (t) {
+        fps_flag = (int) strtol(t->value, NULL, 10);
+        if (fps_flag > 0) {
+            av_dict_set_int(&new_avf->metadata, "skip-calc-frame-rate", fps_flag, 0);
+        }
+    }
+
+    ret = avformat_open_input(&new_avf, file->url, NULL, &tmp);
+    av_dict_free(&tmp);
+    if (ret < 0 ||
+        (ret = avformat_find_stream_info(new_avf, NULL)) < 0) {
+        av_log(avf, AV_LOG_ERROR, "Impossible to open '%s'\n", file->url);
+        avformat_close_input(&new_avf);
+        return ret;
+    }
+
+    if (!new_avf)
+        return 0;
 
     if (cat->avf)
         avformat_close_input(&cat->avf);
 
-    cat->avf = avformat_alloc_context();
-    if (!cat->avf)
-        return AVERROR(ENOMEM);
-
-    cat->avf->flags |= avf->flags;
-    cat->avf->interrupt_callback = avf->interrupt_callback;
-
-    if ((ret = ff_copy_whiteblacklists(cat->avf, avf)) < 0)
-        return ret;
-
-    if ((ret = avformat_open_input(&cat->avf, file->url, NULL, NULL)) < 0 ||
-        (ret = avformat_find_stream_info(cat->avf, NULL)) < 0) {
-        av_log(avf, AV_LOG_ERROR, "Impossible to open '%s'\n", file->url);
-        avformat_close_input(&cat->avf);
-        return ret;
-    }
+    avf->bit_rate = new_avf->bit_rate;
+    cat->avf      = new_avf;
     cat->cur_file = file;
     if (file->start_time == AV_NOPTS_VALUE)
         file->start_time = !fileno ? 0 :
@@ -380,6 +410,7 @@ static int concat_read_close(AVFormatContext *avf)
     }
     if (cat->avf)
         avformat_close_input(&cat->avf);
+    av_dict_free(&cat->options);
     av_freep(&cat->files);
     return 0;
 }
@@ -588,6 +619,7 @@ static int packet_after_outpoint(ConcatContext *cat, AVPacket *pkt)
     return 0;
 }
 
+#define CONCAT_MAX_OPEN_TRY 3
 static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
 {
     ConcatContext *cat = avf->priv_data;
@@ -595,6 +627,13 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
     int64_t delta;
     ConcatStream *cs;
     AVStream *st;
+    int try_counter = 0;
+    int is_new_st = 0;
+
+    if (cat->error) {
+        ret = cat->error;
+        return ret;
+    }
 
     if (cat->eof)
         return AVERROR_EOF;
@@ -605,12 +644,20 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
     while (1) {
         ret = av_read_frame(cat->avf, pkt);
         if (ret == AVERROR_EOF) {
+            is_new_st = 1;
             if ((ret = open_next_file(avf)) < 0)
-                return ret;
+                goto open_fail;
             continue;
         }
-        if (ret < 0)
+        if (ret < 0) {
+            if (avf->pb && cat->avf->pb)
+                avf->pb->error = cat->avf->pb->error;
             return ret;
+        }
+        if (is_new_st) {
+            pkt->flags |= AV_PKT_FLAG_NEW_SEG;
+            is_new_st = 0;
+        }
         if ((ret = match_streams(avf)) < 0) {
             av_packet_unref(pkt);
             return ret;
@@ -618,7 +665,7 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
         if (packet_after_outpoint(cat, pkt)) {
             av_packet_unref(pkt);
             if ((ret = open_next_file(avf)) < 0)
-                return ret;
+                goto open_fail;
             continue;
         }
         cs = &cat->cur_file->streams[pkt->stream_index];
@@ -628,6 +675,16 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
         }
         pkt->stream_index = cs->out_stream_index;
         break;
+open_fail:
+        ++try_counter;
+        if (try_counter > CONCAT_MAX_OPEN_TRY) {
+            cat->error = ret;
+            if (avf->pb && ret != AVERROR_EOF)
+               avf->pb->error = ret;
+            return AVERROR_EOF;
+        }
+
+        av_log(avf, AV_LOG_WARNING, "open_next_file() failed (%d)\n", try_counter);
     }
     if ((ret = filter_packet(avf, cs, pkt)))
         return ret;
@@ -742,6 +799,9 @@ static int concat_seek(AVFormatContext *avf, int stream,
     ConcatFile *cur_file_saved = cat->cur_file;
     AVFormatContext *cur_avf_saved = cat->avf;
     int ret;
+
+    /* reset error/complete state */
+    cat->error = 0;
 
     if (!cat->seekable)
         return AVERROR(ESPIPE); /* XXX: can we use it? */

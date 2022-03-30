@@ -72,6 +72,11 @@ void av_aes_ctr_set_random_iv(struct AVAESCTR *a);
 void av_aes_ctr_set_iv(struct AVAESCTR *a, const uint8_t* iv);
 
 /**
+ * Forcefully change the "full" 16-byte iv, including the counter
+ */
+void av_aes_ctr_set_full_iv(struct AVAESCTR *a, const uint8_t* iv);
+
+/**
  * Increment the top 64 bit of the iv (performed after each frame)
  */
 void av_aes_ctr_increment_iv(struct AVAESCTR *a);

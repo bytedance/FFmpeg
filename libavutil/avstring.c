@@ -85,7 +85,7 @@ size_t av_strlcpy(char *dst, const char *src, size_t size)
     size_t len = 0;
     while (++len < size && *src)
         *dst++ = *src++;
-    if (len <= size)
+    if (len <= size && dst != NULL)
         *dst = 0;
     return len + strlen(src) - 1;
 }
@@ -229,6 +229,29 @@ int av_strncasecmp(const char *a, const char *b, size_t n)
         c2 = av_tolower(*b++);
     } while (a < end && c1 && c1 == c2);
     return c1 - c2;
+}
+
+char *av_strireplace(const char *str, const char *from, const char *to)
+{
+    char *ret = NULL;
+    const char *pstr2, *pstr = str;
+    size_t tolen = strlen(to), fromlen = strlen(from);
+    AVBPrint pbuf;
+    
+    av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
+    while ((pstr2 = av_stristr(pstr, from))) {
+        av_bprint_append_data(&pbuf, pstr, pstr2 - pstr);
+        pstr = pstr2 + fromlen;
+        av_bprint_append_data(&pbuf, to, tolen);
+    }
+    av_bprint_append_data(&pbuf, pstr, strlen(pstr));
+    if (!av_bprint_is_complete(&pbuf)) {
+        av_bprint_finalize(&pbuf, NULL);
+    } else {
+        av_bprint_finalize(&pbuf, &ret);
+    }
+    
+    return ret;
 }
 
 const char *av_basename(const char *path)
@@ -434,4 +457,37 @@ int av_match_list(const char *name, const char *list, char separator)
     }
 
     return 0;
+}
+
+size_t av_str_strip(const char* pStr, const char c) {
+    if (!pStr) return 0;
+    const char* ptmp = pStr;
+    while(*pStr && *pStr==c) pStr++;
+    return (pStr - ptmp);
+}
+
+size_t av_str_strip_r(const char* pStr, const char c) {
+    if (!pStr) return 0;
+    size_t len = strlen(pStr);
+    while(len && *(pStr + len - 1) == c) len--;
+    return len;
+}
+
+void av_str_split(char* pStr, const char* str, int size, char* pList[]) {
+    if (size == 0 || !pStr || !str) return ;
+    pList[0] = pStr;
+    for (int i=1; i<size; i++) {
+        char* pSrc = strstr(pStr, str);
+        if (!pSrc) {
+            pList[i] = NULL;
+            break;
+        }   
+        memset(pSrc, 0, strlen(str));
+        pStr = pSrc + strlen(str);
+        pList[i] = pStr;
+        if (pStr == NULL) {
+            break;
+        }
+    }   
+    return;  
 }

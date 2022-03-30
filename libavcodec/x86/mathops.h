@@ -22,8 +22,6 @@
 #ifndef AVCODEC_X86_MATHOPS_H
 #define AVCODEC_X86_MATHOPS_H
 
-#include "config.h"
-
 #include "libavutil/common.h"
 #include "libavutil/x86/asm.h"
 

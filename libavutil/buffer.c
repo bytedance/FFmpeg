@@ -118,7 +118,8 @@ static void buffer_replace(AVBufferRef **dst, AVBufferRef **src)
 
     if (atomic_fetch_add_explicit(&b->refcount, -1, memory_order_acq_rel) == 1) {
         b->free(b->opaque, b->data);
-        av_freep(&b);
+        if (b && &b)
+           av_freep(&b);
     }
 }
 

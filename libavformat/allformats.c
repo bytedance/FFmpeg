@@ -99,6 +99,7 @@ static void register_all(void)
     REGISTER_MUXER   (DASH,             dash);
     REGISTER_MUXDEMUX(DATA,             data);
     REGISTER_MUXDEMUX(DAUD,             daud);
+    REGISTER_DEMUXER (DASH,             dash);
     REGISTER_DEMUXER (DCSTR,            dcstr);
     REGISTER_DEMUXER (DFA,              dfa);
     REGISTER_MUXDEMUX(DIRAC,            dirac);

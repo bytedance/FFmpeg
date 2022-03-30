@@ -222,7 +222,8 @@ static int64_t cache_seek(URLContext *h, int64_t pos, int whence)
 {
     Context *c= h->priv_data;
     int64_t ret;
-
+     if(whence == AVSEEK_ADDR || whence == AVSEEK_CPSIZE || whence == AVSEEK_SETDUR)
+        return -1;
     if (whence == AVSEEK_SIZE) {
         pos= ffurl_seek(c->inner, pos, whence);
         if(pos <= 0){

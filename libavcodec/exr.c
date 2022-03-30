@@ -1645,7 +1645,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     AVFrame *picture = data;
     uint8_t *ptr;
 
-    int y, ret;
+    int y, ret, ymax;
     int out_line_size;
     int nb_blocks;   /* nb scanline or nb tile */
     uint64_t *table; /* scanline offset table */
@@ -1766,10 +1766,13 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     avctx->execute2(avctx, decode_block, s->thread_data, NULL, nb_blocks);
 
     // Zero out the end if ymax+1 is not h
-    ptr = picture->data[0] + ((s->ymax+1) * picture->linesize[0]);
-    for (y = s->ymax + 1; y < avctx->height; y++) {
-        memset(ptr, 0, out_line_size);
-        ptr += picture->linesize[0];
+    ymax = FFMAX(0, s->ymax + 1);
+    if (ymax < avctx->height) {
+        ptr = picture->data[0] + (ymax * picture->linesize[0]);
+        for (y = ymax; y < avctx->height; y++) {
+            memset(ptr, 0, out_line_size);
+            ptr += picture->linesize[0];
+        }
     }
 
     picture->pict_type = AV_PICTURE_TYPE_I;

@@ -685,6 +685,9 @@ enum AVCodecID {
                                 * stream (only used by libavformat) */
     AV_CODEC_ID_FFMETADATA = 0x21000,   ///< Dummy codec for streams containing only metadata information.
     AV_CODEC_ID_WRAPPED_AVFRAME = 0x21001, ///< Passthrough codec, AVFrames wrapped in AVPacket
+
+    AV_CODEC_ID_AC4 = 0x31000, //dolby ac4 codec
+    AV_CODEC_ID_BYTE_VC2 = 0x41000, //ByteDance VC2 codec
 };
 
 /**
@@ -1585,6 +1588,21 @@ enum AVPacketSideDataType {
     AV_PKT_DATA_SPHERICAL,
 
     /**
+     * DOVI configuration
+     * ref:
+     * dolby-vision-bitstreams-within-the-iso-base-media-file-format-v2.1.2, section 2.2
+     * dolby-vision-bitstreams-in-mpeg-2-transport-stream-multiplex-v1.2, section 3.3
+     * Tags are stored in struct AVDOVIDecoderConfigurationRecord.
+     */
+    AV_PKT_DATA_DOVI_CONF,
+
+    /**
+     * The disposal method that should be used with the frame. If missing,
+     * the frame will not be disposed. This contains exactly one byte.
+     */
+    AV_PKT_DATA_GIF_FRAME_DISPOSAL,
+
+    /**
      * The number of side data elements (in fact a bit more than it).
      * This is not part of the public API/ABI in the sense that it may
      * change when new side data types are added.
@@ -1694,6 +1712,9 @@ typedef struct AVPacket {
  * after decoding.
  **/
 #define AV_PKT_FLAG_DISCARD   0x0004
+#define AV_PKT_FLAG_EOF       0x4000 ///< The packet reach stream id eof
+#define AV_PKT_FLAG_NEW_SEG 0x8000 ///< The packet is the first packet from a source in concat
+#define AV_PKT_FLAG_EOR 0x9000  ///< The packet is end of the range
 
 enum AVSideDataParamChangeFlags {
     AV_SIDE_DATA_PARAM_CHANGE_CHANNEL_COUNT  = 0x0001,
@@ -1736,7 +1757,7 @@ typedef struct AVCodecContext {
      */
     const AVClass *av_class;
     int log_level_offset;
-
+    aptr_t aptr;
     enum AVMediaType codec_type; /* see AVMEDIA_TYPE_xxx */
     const struct AVCodec  *codec;
 #if FF_API_CODEC_NAME
@@ -3324,6 +3345,11 @@ typedef struct AVCodecContext {
 #define FF_PROFILE_HEVC_MAIN_10                     2
 #define FF_PROFILE_HEVC_MAIN_STILL_PICTURE          3
 #define FF_PROFILE_HEVC_REXT                        4
+
+#define FF_PROFILE_BYTE_VC2_MAIN                    1
+#define FF_PROFILE_BYTE_VC2_MAIN_10                 2
+#define FF_PROFILE_BYTE_VC2_MAIN_STILL_PICTURE      3
+#define FF_PROFILE_BYTE_VC2_REXT                    4
 
     /**
      * level

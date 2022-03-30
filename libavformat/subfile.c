@@ -119,6 +119,10 @@ static int64_t subfile_seek(URLContext *h, int64_t pos, int whence)
     if (whence == AVSEEK_SIZE)
         return c->end - c->start;
     switch (whence) {
+    case AVSEEK_SETDUR:
+    case AVSEEK_ADDR:
+    case AVSEEK_CPSIZE:
+	    return -1;
     case SEEK_SET:
         new_pos = c->start + pos;
         break;

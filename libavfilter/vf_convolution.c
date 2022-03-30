@@ -173,13 +173,13 @@ static int filter16_prewitt(AVFilterContext *ctx, void *arg, int jobnr, int nb_j
         line_copy16(p2, src, width, 1);
 
         for (x = 0; x < width; x++) {
-            int suma = p0[x - 1] * -1 +
+            float suma = p0[x - 1] * -1 +
                        p0[x] *     -1 +
                        p0[x + 1] * -1 +
                        p2[x - 1] *  1 +
                        p2[x] *      1 +
                        p2[x + 1] *  1;
-            int sumb = p0[x - 1] * -1 +
+            float sumb = p0[x - 1] * -1 +
                        p0[x + 1] *  1 +
                        p1[x - 1] * -1 +
                        p1[x + 1] *  1 +
@@ -230,13 +230,13 @@ static int filter16_sobel(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
         line_copy16(p2, src, width, 1);
 
         for (x = 0; x < width; x++) {
-            int suma = p0[x - 1] * -1 +
+            float suma = p0[x - 1] * -1 +
                        p0[x] *     -2 +
                        p0[x + 1] * -1 +
                        p2[x - 1] *  1 +
                        p2[x] *      2 +
                        p2[x + 1] *  1;
-            int sumb = p0[x - 1] * -1 +
+            float sumb = p0[x - 1] * -1 +
                        p0[x + 1] *  1 +
                        p1[x - 1] * -2 +
                        p1[x + 1] *  2 +
@@ -286,13 +286,13 @@ static int filter_prewitt(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
         line_copy8(p2, src, width, 1);
 
         for (x = 0; x < width; x++) {
-            int suma = p0[x - 1] * -1 +
+            float suma = p0[x - 1] * -1 +
                        p0[x] *     -1 +
                        p0[x + 1] * -1 +
                        p2[x - 1] *  1 +
                        p2[x] *      1 +
                        p2[x + 1] *  1;
-            int sumb = p0[x - 1] * -1 +
+            float sumb = p0[x - 1] * -1 +
                        p0[x + 1] *  1 +
                        p1[x - 1] * -1 +
                        p1[x + 1] *  1 +
@@ -342,13 +342,13 @@ static int filter_sobel(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
         line_copy8(p2, src, width, 1);
 
         for (x = 0; x < width; x++) {
-            int suma = p0[x - 1] * -1 +
+            float suma = p0[x - 1] * -1 +
                        p0[x] *     -2 +
                        p0[x + 1] * -1 +
                        p2[x - 1] *  1 +
                        p2[x] *      2 +
                        p2[x + 1] *  1;
-            int sumb = p0[x - 1] * -1 +
+            float sumb = p0[x - 1] * -1 +
                        p0[x + 1] *  1 +
                        p1[x - 1] * -2 +
                        p1[x + 1] *  2 +

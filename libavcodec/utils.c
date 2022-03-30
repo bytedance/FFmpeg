@@ -418,7 +418,10 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
 
     *width  = FFALIGN(*width, w_align);
     *height = FFALIGN(*height, h_align);
-    if (s->codec_id == AV_CODEC_ID_H264 || s->lowres) {
+    if (s->codec_id == AV_CODEC_ID_H264 || s->lowres ||
+        s->codec_id == AV_CODEC_ID_VP5  || s->codec_id == AV_CODEC_ID_VP6 ||
+        s->codec_id == AV_CODEC_ID_VP6F || s->codec_id == AV_CODEC_ID_VP6A
+    ) {
         // some of the optimized chroma MC reads one line too much
         // which is also done in mpeg decoders with lowres > 0
         *height += 2;
@@ -729,8 +732,10 @@ int avcodec_default_get_buffer2(AVCodecContext *avctx, AVFrame *frame, int flags
 {
     int ret;
 
+#if !CONFIG_LITE
     if (avctx->hw_frames_ctx)
         return av_hwframe_get_buffer(avctx->hw_frames_ctx, frame, 0);
+#endif
 
     if ((ret = update_frame_pool(avctx, frame)) < 0)
         return ret;
@@ -1270,7 +1275,7 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
     if (ret < 0)
         return ret;
 
-    avctx->internal = av_mallocz(sizeof(AVCodecInternal));
+    avctx->internal = av_mallocz(sizeof(*avctx->internal));
     if (!avctx->internal) {
         ret = AVERROR(ENOMEM);
         goto end;
@@ -1568,7 +1573,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         }
 
         if (!avctx->rc_initial_buffer_occupancy)
-            avctx->rc_initial_buffer_occupancy = avctx->rc_buffer_size * 3 / 4;
+            avctx->rc_initial_buffer_occupancy = avctx->rc_buffer_size * 3LL / 4;
 
         if (avctx->ticks_per_frame && avctx->time_base.num &&
             avctx->ticks_per_frame > INT_MAX / avctx->time_base.num) {
@@ -1706,7 +1711,7 @@ end:
 
     return ret;
 free_and_end:
-    if (avctx->codec &&
+    if (avctx->codec && avctx->codec->close &&
         (avctx->codec->caps_internal & FF_CODEC_CAP_INIT_CLEANUP))
         avctx->codec->close(avctx);
 
@@ -2795,7 +2800,7 @@ void avsubtitle_free(AVSubtitle *sub)
 
     av_freep(&sub->rects);
 
-    memset(sub, 0, sizeof(AVSubtitle));
+    memset(sub, 0, sizeof(*sub));
 }
 
 static int do_decode(AVCodecContext *avctx, AVPacket *pkt)
@@ -3776,20 +3781,22 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
 
 int av_get_audio_frame_duration(AVCodecContext *avctx, int frame_bytes)
 {
-    return get_audio_frame_duration(avctx->codec_id, avctx->sample_rate,
+    int duration = get_audio_frame_duration(avctx->codec_id, avctx->sample_rate,
                                     avctx->channels, avctx->block_align,
                                     avctx->codec_tag, avctx->bits_per_coded_sample,
                                     avctx->bit_rate, avctx->extradata, avctx->frame_size,
                                     frame_bytes);
+    return FFMAX(0, duration);
 }
 
 int av_get_audio_frame_duration2(AVCodecParameters *par, int frame_bytes)
 {
-    return get_audio_frame_duration(par->codec_id, par->sample_rate,
+    int duration = get_audio_frame_duration(par->codec_id, par->sample_rate,
                                     par->channels, par->block_align,
                                     par->codec_tag, par->bits_per_coded_sample,
                                     par->bit_rate, par->extradata, par->frame_size,
                                     frame_bytes);
+    return FFMAX(0, duration);
 }
 
 #if !HAVE_THREADS

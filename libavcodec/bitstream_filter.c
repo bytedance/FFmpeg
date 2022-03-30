@@ -39,8 +39,28 @@ AVBitStreamFilter *av_bitstream_filter_next(const AVBitStreamFilter *f)
     return av_bsf_next(&opaque);
 }
 
+AVBitStreamFilter ff_bytevc2_mp4toannexb_bsf = {
+    .name           = "bytevc2",
+    .priv_data_size = 0
+};
+
 void av_register_bitstream_filter(AVBitStreamFilter *bsf)
 {
+    if (!bsf || !bsf->codec_ids)
+        return;
+    int i = 0, codec_id = 0;
+    AVBitStreamFilter *dst = NULL;
+    for (i = 0; bsf->codec_ids[i] != AV_CODEC_ID_NONE; i++) {
+        if (bsf->codec_ids[i] == AV_CODEC_ID_BYTE_VC2) {
+            dst = &ff_bytevc2_mp4toannexb_bsf;
+            codec_id = AV_CODEC_ID_BYTE_VC2;
+            break;
+        }
+    }
+    if (dst != NULL) {
+        memcpy(dst, bsf, sizeof(AVBitStreamFilter));
+        av_log(NULL, AV_LOG_INFO, "register bsf:%d %s", codec_id, bsf->name);
+    }
 }
 
 typedef struct BSFCompatContext {

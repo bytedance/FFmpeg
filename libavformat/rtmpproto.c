@@ -2612,14 +2612,21 @@ static int inject_fake_duration_metadata(RTMPContext *rt)
 static int rtmp_open(URLContext *s, const char *uri, int flags, AVDictionary **opts)
 {
     RTMPContext *rt = s->priv_data;
-    char proto[8], hostname[256], path[1024], auth[100], *fname;
+    char proto[8], hostname[256], path[1024], auth[100], value[48], *fname;
     char *old_app, *qmark, *n, fname_buffer[1024];
     uint8_t buf[2048];
     int port;
     int ret;
 
-    if (rt->listen_timeout > 0)
-        rt->listen = 1;
+    snprintf(value, 48, "%d", rt->listen_timeout);
+    av_dict_set(opts, "timeout", value, 0);
+    /**
+     * When set timeout, this part will change listen mode. To avoid this
+     We comment out this part.
+     *
+     */
+    //    if (rt->listen_timeout > 0)
+    //        rt->listen = 1;
 
     rt->is_input = !(flags & AVIO_FLAG_WRITE);
 
@@ -2668,6 +2675,9 @@ static int rtmp_open(URLContext *s, const char *uri, int flags, AVDictionary **o
         /* open the encrypted connection */
         ff_url_join(buf, sizeof(buf), "ffrtmpcrypt", NULL, hostname, port, NULL);
         rt->encrypted = 1;
+    } else if (!strcmp(proto, "rtmpq")) {
+        /* open the quic connection */
+        ff_url_join(buf, sizeof(buf), "quic", NULL, hostname, port, NULL);
     } else {
         /* open the tcp connection */
         if (port < 0)
@@ -3163,3 +3173,5 @@ RTMP_PROTOCOL(rtmps)
 RTMP_PROTOCOL(rtmpt)
 RTMP_PROTOCOL(rtmpte)
 RTMP_PROTOCOL(rtmpts)
+RTMP_PROTOCOL(rtmpk)
+RTMP_PROTOCOL(rtmpq)

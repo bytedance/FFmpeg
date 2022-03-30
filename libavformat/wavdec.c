@@ -116,6 +116,7 @@ static int64_t find_tag(WAVDemuxContext * wav, AVIOContext *pb, uint32_t tag1)
 {
     unsigned int tag;
     int64_t size;
+    int64_t ret;
 
     for (;;) {
         if (avio_feof(pb))
@@ -123,7 +124,14 @@ static int64_t find_tag(WAVDemuxContext * wav, AVIOContext *pb, uint32_t tag1)
         size = next_tag(pb, &tag, wav->rifx);
         if (tag == tag1)
             break;
-        wav_seek_tag(wav, pb, size, SEEK_CUR);
+        ret = wav_seek_tag(wav, pb, size, SEEK_CUR);
+        if(ret == AVERROR_HTTP_BAD_REQUEST || 
+		   ret == AVERROR_HTTP_UNAUTHORIZED ||
+		   ret == AVERROR_HTTP_FORBIDDEN ||
+		   ret == AVERROR_HTTP_NOT_FOUND ||
+		   ret == AVERROR_HTTP_OTHER_4XX ||
+		   ret == AVERROR_HTTP_SERVER_ERROR)
+           return ret;
     }
     return size;
 }

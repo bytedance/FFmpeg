@@ -37,6 +37,7 @@
 #include <openssl/err.h>
 
 static int openssl_init;
+static int openssl_data_index;
 
 typedef struct TLSContext {
     const AVClass *class;
@@ -51,6 +52,7 @@ typedef struct TLSContext {
 #if HAVE_THREADS
 #include <openssl/crypto.h>
 pthread_mutex_t *openssl_mutexes;
+static int openssl_mutex_num;
 static void openssl_lock(int mode, int type, const char *file, int line)
 {
     if (mode & CRYPTO_LOCK)
@@ -152,20 +154,25 @@ int ff_openssl_init(void)
 #if HAVE_THREADS
         if (!CRYPTO_get_locking_callback()) {
             int i;
-            openssl_mutexes = av_malloc_array(sizeof(pthread_mutex_t), CRYPTO_num_locks());
-            if (!openssl_mutexes) {
-                avpriv_unlock_avformat();
-                return AVERROR(ENOMEM);
-            }
-
-            for (i = 0; i < CRYPTO_num_locks(); i++)
-                pthread_mutex_init(&openssl_mutexes[i], NULL);
             CRYPTO_set_locking_callback(openssl_lock);
+            if (CRYPTO_get_locking_callback() == openssl_lock) {
+                openssl_mutex_num = CRYPTO_num_locks();
+                openssl_mutexes = av_malloc_array(sizeof(pthread_mutex_t), openssl_mutex_num);
+                if (!openssl_mutexes) {
+                    openssl_mutex_num = 0;
+                    avpriv_unlock_avformat();
+                    return AVERROR(ENOMEM);
+                }
+                for (i = 0; i < openssl_mutex_num; i++) {
+                    pthread_mutex_init(&openssl_mutexes[i], NULL);
+                }
 #if !defined(WIN32) && OPENSSL_VERSION_NUMBER < 0x10000000
-            CRYPTO_set_id_callback(openssl_thread_id);
+                CRYPTO_set_id_callback(openssl_thread_id);
 #endif
+            }
         }
 #endif
+        openssl_data_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
     }
     openssl_init++;
     avpriv_unlock_avformat();
@@ -182,11 +189,17 @@ void ff_openssl_deinit(void)
         if (CRYPTO_get_locking_callback() == openssl_lock) {
             int i;
             CRYPTO_set_locking_callback(NULL);
-            for (i = 0; i < CRYPTO_num_locks(); i++)
-                pthread_mutex_destroy(&openssl_mutexes[i]);
-            av_free(openssl_mutexes);
+            if (openssl_mutexes != NULL) {
+                for (i = 0; i < openssl_mutex_num; i++) {
+                    pthread_mutex_destroy(&openssl_mutexes[i]);
+                }
+                av_free(openssl_mutexes);
+            }
+            openssl_mutexes = NULL;
+            openssl_mutex_num = 0;
         }
 #endif
+    openssl_data_index = -1;
     }
     avpriv_unlock_avformat();
 }
@@ -215,7 +228,21 @@ static int tls_close(URLContext *h)
     ff_openssl_deinit();
     return 0;
 }
-
+#if CONFIG_BORINGSSLVERIFY
+static enum ssl_verify_result_t ff_verify_custom_callbak(SSL *ssl, uint8_t *out_alert) {
+    TLSContext *p = NULL;
+    TLSShared  *c = NULL;
+    URLContext *h = (URLContext*)(SSL_get_ex_data(ssl, openssl_data_index));
+    if (!h) {
+        av_log(h, AV_LOG_ERROR, "verify call fail, URLContext null\n");
+        return ssl_verify_invalid;
+    }
+    p = h->priv_data;
+    c = &p->tls_shared;
+    
+    return ff_do_custom_verify_callback(h, ssl, c->host, c->port);
+}
+#endif
 static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **options)
 {
     TLSContext *p = h->priv_data;
@@ -258,13 +285,24 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     }
     // Note, this doesn't check that the peer certificate actually matches
     // the requested hostname.
-    if (c->verify)
+    if (c->verify) {
+    #if CONFIG_BORINGSSLVERIFY
+        SSL_CTX_set_reverify_on_resume(p->ctx, 1);
+        SSL_CTX_set_custom_verify(p->ctx, SSL_VERIFY_PEER,
+                                  ff_verify_custom_callbak);
+    #else
         SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+    #endif
+    }
+        
     p->ssl = SSL_new(p->ctx);
     if (!p->ssl) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(ERR_get_error(), NULL));
         ret = AVERROR(EIO);
         goto fail;
+    }
+    if((ret = SSL_set_ex_data(p->ssl, openssl_data_index, h))) {
+        av_log(h, AV_LOG_DEBUG, "set ex data fail");
     }
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
     p->url_bio_method = BIO_meth_new(BIO_TYPE_SOURCE_SINK, "urlprotocol bio");
@@ -281,7 +319,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     bio->ptr = c->tcp;
 #endif
     SSL_set_bio(p->ssl, bio, bio);
-    if (!c->listen && !c->numerichost)
+    if (!c->listen)
         SSL_set_tlsext_host_name(p->ssl, c->host);
     ret = c->listen ? SSL_accept(p->ssl) : SSL_connect(p->ssl);
     if (ret == 0) {

@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #ifndef AVFORMAT_NETWORK_H
@@ -26,6 +29,7 @@
 
 #include "config.h"
 #include "libavutil/error.h"
+#include "libavutil/ttmapp.h"
 #include "os_support.h"
 #include "avio.h"
 #include "url.h"
@@ -234,7 +238,74 @@ const char *ff_gai_strerror(int ecode);
 #define IN6_IS_ADDR_MULTICAST(a) (((uint8_t *) (a))[0] == 0xff)
 #endif
 
+typedef struct getaddrinfo_a_CTX{
+    getaddrinfo_a_start     start;
+    getaddrinfo_a_result    result;
+    getaddrinfo_a_free      free;
+    save_host_addr          save_ip;
+    network_log_callback    log_callback;
+    tcp_io_read_callback    io_callback;
+    network_info_callback   info_callback;
+}getaddrinfo_a_ctx;
+
+int ff_support_getaddrinfo_a(void);
+
+int ff_isupport_getaddrinfo_a(uint64_t cb_ctx);
+
+void ff_getaddrinfo_a_init(getaddrinfo_a_start getinfo, getaddrinfo_a_result result,getaddrinfo_a_free end,
+                           save_host_addr save_ip, network_log_callback log_callback, tcp_io_read_callback io_callback, network_info_callback info_callback);
+
+void ff_register_dns_parser(getaddrinfo_a_start getinfo, getaddrinfo_a_result result, getaddrinfo_a_free end);
+
+void* ff_igetaddrinfo_a_start(uint64_t cb_ctx, uint64_t handle,const char* hostname, int user_flag);
+
+int ff_igetaddrinfo_a_result(uint64_t cb_ctx, void* ctx,char* ipaddress,int size);
+
+void ff_igetaddrinfo_a_free(uint64_t cb_ctx, void* ctx);
+
+void ff_isave_host_addr(uint64_t cb_ctx, aptr_t handle, const char* ip, int user_flag);
+
+void ff_inetwork_log_callback(uint64_t cb_ctx, aptr_t handle, int type, int user_flag);
+
+void ff_inetwork_io_read_callback(uint64_t cb_ctx, aptr_t handle, int type, int size);
+
+void ff_inetwork_info_callback(uint64_t cb_ctx, aptr_t handle, int key, int64_t value, const char* strValue);
+
 int ff_is_multicast_address(struct sockaddr *addr);
+
+void ff_set_custom_verify_callback(int (*callback)(void*, void*, const char*, int));
+int ff_do_custom_verify_callback(void* context, void* ssl, const char* host, int port);
+
+typedef void* (*resource_loader_open)(aptr_t handle, const char *arg, int flags, void *cb);
+typedef int (*resource_loader_read)(void* loader, unsigned char *buf, int size, void *cb);
+typedef int64_t (*resource_loader_seek)(void* loader, int64_t pos, int whence);
+typedef int (*resource_loader_close)(void* loader);
+
+typedef struct resourceLoader_ctx {
+    resource_loader_open     open;
+    resource_loader_read     read;
+    resource_loader_seek     seek;
+    resource_loader_close    close;
+}resourceLoader_ctx;
+
+int ff_support_resourceloader(void);
+
+void ff_resourceloader_init(resource_loader_open open, resource_loader_read read, resource_loader_seek seek, resource_loader_close close);
+
+void* ff_resource_loader_open(aptr_t handle, const char *arg, int flags, void *cb);
+
+int ff_resource_loader_read(void* loader, unsigned char *buf, int size, void *cb);
+
+int64_t ff_resource_loader_seek(void* loader, int64_t pos, int whence);
+
+int ff_resource_loader_close(void* loader);
+
+typedef struct httpEvent_ctx {
+  char      url[4096];
+  uint64_t  off;
+  uint64_t  end_off;
+} httpEvent_ctx;
+
 
 #define POLLING_TIME 100 /// Time in milliseconds between interrupt check
 
@@ -293,6 +364,18 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
                       socklen_t addrlen, int timeout,
                       URLContext *h, int will_try_next);
 
+/**
+ * ONLY for Android TFO
+ */
+int ff_sendto(int fd, const char *msg, int msg_len, int flag,
+                const struct sockaddr *addr,
+                socklen_t addrlen, int timeout, URLContext *h,
+                int will_try_next);
+
+int ff_listen_connect2(int fd, const struct sockaddr *addr,
+                       socklen_t addrlen, int timeout,
+                       URLContext *h, int will_try_next,
+                       int fast_open);
 int ff_http_match_no_proxy(const char *no_proxy, const char *hostname);
 
 int ff_socket(int domain, int type, int protocol);

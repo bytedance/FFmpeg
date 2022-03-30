@@ -29,6 +29,7 @@
 
 #define MT(...) (const char *const[]){ __VA_ARGS__, NULL }
 
+#if !CONFIG_LITE
 static const AVCodecDescriptor codec_descriptors[] = {
     /* video codecs */
     {
@@ -3059,6 +3060,34 @@ static const AVCodecDescriptor codec_descriptors[] = {
 
     /* deprecated codec ids */
 };
+#else
+static const AVCodecDescriptor codec_descriptors[] = {
+    {
+        .id        = AV_CODEC_ID_H264,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "h264",
+        .long_name = NULL_IF_CONFIG_SMALL("H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
+        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_LOSSLESS | AV_CODEC_PROP_REORDER,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_h264_profiles),
+    },
+    {
+        .id        = AV_CODEC_ID_HEVC,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "hevc",
+        .long_name = NULL_IF_CONFIG_SMALL("H.265 / HEVC (High Efficiency Video Coding)"),
+        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_hevc_profiles),
+    },
+    {
+        .id        = AV_CODEC_ID_AAC,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "aac",
+        .long_name = NULL_IF_CONFIG_SMALL("AAC (Advanced Audio Coding)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
+    },
+};
+#endif
 
 const AVCodecDescriptor *avcodec_descriptor_get(enum AVCodecID id)
 {

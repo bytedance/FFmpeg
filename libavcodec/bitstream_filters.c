@@ -31,6 +31,7 @@ extern const AVBitStreamFilter ff_dca_core_bsf;
 extern const AVBitStreamFilter ff_extract_extradata_bsf;
 extern const AVBitStreamFilter ff_h264_mp4toannexb_bsf;
 extern const AVBitStreamFilter ff_hevc_mp4toannexb_bsf;
+extern const AVBitStreamFilter ff_bytevc2_mp4toannexb_bsf;
 extern const AVBitStreamFilter ff_imx_dump_header_bsf;
 extern const AVBitStreamFilter ff_mjpeg2jpeg_bsf;
 extern const AVBitStreamFilter ff_mjpega_dump_header_bsf;
@@ -58,6 +59,9 @@ const AVBitStreamFilter *av_bsf_next(void **opaque)
 const AVBitStreamFilter *av_bsf_get_by_name(const char *name)
 {
     int i;
+
+    if (!name)
+        return NULL;
 
     for (i = 0; bitstream_filters[i]; i++) {
         const AVBitStreamFilter *f = bitstream_filters[i];

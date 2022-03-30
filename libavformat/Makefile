@@ -4,26 +4,40 @@ NAME = avformat
 
 HEADERS = avformat.h                                                    \
           avio.h                                                        \
+          avio_internal.h                                               \
           version.h                                                     \
+          os_support.h                                                  \
+          internal.h                                                    \
+          url.h                                                         \
+          network.h                                                     \
+          isom.h                                                        \
+          dv.h                                                          \
+          dash.h                                                        \
+          avc.h                                                         \
 
 OBJS = allformats.o         \
        avio.o               \
        aviobuf.o            \
        cutils.o             \
-       dump.o               \
        format.o             \
        id3v1.o              \
        id3v2.o              \
        metadata.o           \
-       mux.o                \
        options.o            \
        os_support.o         \
        qtpalette.o          \
        protocols.o          \
        riff.o               \
-       sdp.o                \
        url.o                \
        utils.o              \
+
+OBJS-$(!CONFIG_LITE) += ttutils.o      \
+                        dump.o         \
+                        mux.o          \
+                        sdp.o          \
+                        httpauth.o     \
+                        urldecode.o
+
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 
@@ -134,6 +148,7 @@ OBJS-$(CONFIG_CRC_MUXER)                 += crcenc.o
 OBJS-$(CONFIG_DATA_DEMUXER)              += rawdec.o
 OBJS-$(CONFIG_DATA_MUXER)                += rawenc.o
 OBJS-$(CONFIG_DASH_MUXER)                += dashenc.o
+OBJS-$(CONFIG_DASH_DEMUXER)              += dashdec.o dash.o
 OBJS-$(CONFIG_DAUD_DEMUXER)              += dauddec.o
 OBJS-$(CONFIG_DAUD_MUXER)                += daudenc.o
 OBJS-$(CONFIG_DCSTR_DEMUXER)             += dcstr.o
@@ -284,7 +299,7 @@ OBJS-$(CONFIG_MLV_DEMUXER)               += mlvdec.o riffdec.o
 OBJS-$(CONFIG_MM_DEMUXER)                += mm.o
 OBJS-$(CONFIG_MMF_DEMUXER)               += mmf.o
 OBJS-$(CONFIG_MMF_MUXER)                 += mmf.o rawenc.o
-OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o replaygain.o
+OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o mov_esds.o replaygain.o
 OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o avc.o hevc.o vpcc.o \
                                             movenchint.o mov_chan.o rtp.o \
                                             movenccenc.o rawutils.o
@@ -585,6 +600,7 @@ OBJS-$(CONFIG_TLS_SECURETRANSPORT_PROTOCOL) += tls_securetransport.o tls.o
 OBJS-$(CONFIG_UDP_PROTOCOL)              += udp.o
 OBJS-$(CONFIG_UDPLITE_PROTOCOL)          += udp.o
 OBJS-$(CONFIG_UNIX_PROTOCOL)             += unix.o
+OBJS-$(CONFIG_MEDIADATASOURCE_PROTOCOL)  += mediadatasource.o
 
 # libavdevice dependencies
 OBJS-$(CONFIG_IEC61883_INDEV)            += dv.o

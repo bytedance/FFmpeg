@@ -34,6 +34,7 @@
 #include "h264.h"
 #include "h264_sei.h"
 #include <dlfcn.h>
+#include "videotoolbox.h"
 
 //These symbols may not be present
 static struct{
@@ -119,69 +120,7 @@ static void loadVTEncSymbols(){
             "RequireHardwareAcceleratedVideoEncoder");
 }
 
-typedef enum VT_H264Profile {
-    H264_PROF_AUTO,
-    H264_PROF_BASELINE,
-    H264_PROF_MAIN,
-    H264_PROF_HIGH,
-    H264_PROF_COUNT
-} VT_H264Profile;
-
-typedef enum VTH264Entropy{
-    VT_ENTROPY_NOT_SET,
-    VT_CAVLC,
-    VT_CABAC
-} VTH264Entropy;
-
 static const uint8_t start_code[] = { 0, 0, 0, 1 };
-
-typedef struct ExtraSEI {
-  void *data;
-  size_t size;
-} ExtraSEI;
-
-typedef struct BufNode {
-    CMSampleBufferRef cm_buffer;
-    ExtraSEI *sei;
-    struct BufNode* next;
-    int error;
-} BufNode;
-
-typedef struct VTEncContext {
-    AVClass *class;
-    VTCompressionSessionRef session;
-    CFStringRef ycbcr_matrix;
-    CFStringRef color_primaries;
-    CFStringRef transfer_function;
-
-    pthread_mutex_t lock;
-    pthread_cond_t  cv_sample_sent;
-
-    int async_error;
-
-    BufNode *q_head;
-    BufNode *q_tail;
-
-    int64_t frame_ct_out;
-    int64_t frame_ct_in;
-
-    int64_t first_pts;
-    int64_t dts_delta;
-
-    int64_t profile;
-    int64_t level;
-    int64_t entropy;
-    int64_t realtime;
-    int64_t frames_before;
-    int64_t frames_after;
-
-    int64_t allow_sw;
-
-    bool flushing;
-    bool has_b_frames;
-    bool warned_color_range;
-    bool a53_cc;
-} VTEncContext;
 
 static int vtenc_populate_extradata(AVCodecContext   *avctx,
                                     CMVideoCodecType codec_type,
@@ -971,9 +910,12 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         CFRelease(one_second);
         return AVERROR(ENOMEM);
     }
-    status = VTSessionSetProperty(vtctx->session,
-                                  kVTCompressionPropertyKey_DataRateLimits,
-                                  data_rate_limits);
+
+    if (vtctx->enableRateLimits) {
+        status = VTSessionSetProperty(vtctx->session,
+                                    kVTCompressionPropertyKey_DataRateLimits,
+                                    data_rate_limits);
+    }
 
     CFRelease(bytes_per_second);
     CFRelease(one_second);
@@ -993,16 +935,16 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         }
     }
 
-    if (avctx->gop_size > 0) {
+    if (vtctx->maxKeyFrameIntervalDuration > 0) {
         CFNumberRef interval = CFNumberCreate(kCFAllocatorDefault,
-                                              kCFNumberIntType,
-                                              &avctx->gop_size);
+                                              kCFNumberDoubleType,
+                                              &vtctx->maxKeyFrameIntervalDuration);
         if (!interval) {
             return AVERROR(ENOMEM);
         }
 
         status = VTSessionSetProperty(vtctx->session,
-                                      kVTCompressionPropertyKey_MaxKeyFrameInterval,
+                                      kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
                                       interval);
         CFRelease(interval);
 
@@ -1107,9 +1049,14 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
 
         if (status) {
             av_log(avctx, AV_LOG_WARNING, "Could not set transfer function: %d\n", status);
+            status = VTSessionSetProperty(vtctx->session,
+                                      kVTCompressionPropertyKey_TransferFunction,
+                                      kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+            if (status) {
+                av_log(avctx, AV_LOG_WARNING, "Retry could not set transfer function: %d\n", status);
+            }
         }
     }
-
 
     if (vtctx->ycbcr_matrix) {
         status = VTSessionSetProperty(vtctx->session,
@@ -1118,6 +1065,12 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
 
         if (status) {
             av_log(avctx, AV_LOG_WARNING, "Could not set ycbcr matrix: %d\n", status);
+            status = VTSessionSetProperty(vtctx->session,
+                                        kVTCompressionPropertyKey_YCbCrMatrix,
+                                        kCMFormatDescriptionYCbCrMatrix_ITU_R_601_4);
+            if (status) {
+                av_log(avctx, AV_LOG_WARNING, "Retry could not set ycbcr matrix: %d\n", status);
+            }
         }
     }
 
@@ -1129,6 +1082,12 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
 
         if (status) {
             av_log(avctx, AV_LOG_WARNING, "Could not set color primaries: %d\n", status);
+            status = VTSessionSetProperty(vtctx->session,
+                                          kVTCompressionPropertyKey_ColorPrimaries,
+                                          kCMFormatDescriptionColorPrimaries_ITU_R_709_2);
+            if (status) {
+                av_log(avctx, AV_LOG_WARNING, "Retry could not set color primaries: %d\n", status);
+            }
         }
     }
 
@@ -1253,9 +1212,18 @@ static av_cold int vtenc_init(AVCodecContext *avctx)
     pthread_cond_init(&vtctx->cv_sample_sent, NULL);
     vtctx->dts_delta = vtctx->has_b_frames ? -1 : 0;
 
-    get_cv_transfer_function(avctx, &vtctx->transfer_function, &gamma_level);
-    get_cv_ycbcr_matrix(avctx, &vtctx->ycbcr_matrix);
-    get_cv_color_primaries(avctx, &vtctx->color_primaries);
+    if (vtctx->transfer_function == NULL) {
+        get_cv_transfer_function(avctx, &vtctx->transfer_function, &gamma_level);
+    }
+    
+    if (vtctx->ycbcr_matrix == NULL) {
+        get_cv_ycbcr_matrix(avctx, &vtctx->ycbcr_matrix);
+    } 
+    
+    if (vtctx->color_primaries == NULL) {
+        get_cv_color_primaries(avctx, &vtctx->color_primaries);
+    }
+    
 
 
     if (avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
@@ -1803,8 +1771,14 @@ static int vtenc_cm_to_avpacket(
 
     dts_delta = vtctx->dts_delta >= 0 ? vtctx->dts_delta : 0;
     time_base_num = avctx->time_base.num;
+
     pkt->pts = pts.value / time_base_num;
     pkt->dts = dts.value / time_base_num - dts_delta;
+
+    if (((pkt->dts > pkt->pts) && (pkt->dts - pkt->pts) < dts_delta)) {
+        pkt->dts = pkt->pts;
+    }
+
     pkt->size = out_buf_size;
 
     return 0;
@@ -2291,21 +2265,11 @@ static int vtenc_populate_extradata(AVCodecContext   *avctx,
                                     CFDictionaryRef  pixel_buffer_info)
 {
     VTEncContext *vtctx = avctx->priv_data;
-    AVFrame *frame = av_frame_alloc();
-    int y_size = avctx->width * avctx->height;
-    int chroma_size = (avctx->width / 2) * (avctx->height / 2);
-    CMSampleBufferRef buf = NULL;
     int status;
-
-    if (!frame)
-        return AVERROR(ENOMEM);
-
-    frame->buf[0] = av_buffer_alloc(y_size + 2 * chroma_size);
-
-    if(!frame->buf[0]){
-        status = AVERROR(ENOMEM);
-        goto pe_cleanup;
-    }
+    CVPixelBufferPoolRef pool = NULL;
+    CVPixelBufferRef pix_buf = NULL;
+    CMTime time;
+    CMSampleBufferRef buf = NULL;
 
     status = vtenc_create_encoder(avctx,
                                   codec_type,
@@ -2317,39 +2281,36 @@ static int vtenc_populate_extradata(AVCodecContext   *avctx,
     if (status)
         goto pe_cleanup;
 
-    frame->data[0] = frame->buf[0]->data;
-    memset(frame->data[0],   0,      y_size);
-
-    frame->data[1] = frame->buf[0]->data + y_size;
-    memset(frame->data[1], 128, chroma_size);
-
-
-    if (avctx->pix_fmt == AV_PIX_FMT_YUV420P) {
-        frame->data[2] = frame->buf[0]->data + y_size + chroma_size;
-        memset(frame->data[2], 128, chroma_size);
+    pool = VTCompressionSessionGetPixelBufferPool(vtctx->session);
+    if(!pool){
+        av_log(avctx, AV_LOG_ERROR, "Error getting pixel buffer pool.\n");
+        goto pe_cleanup;
     }
 
-    frame->linesize[0] = avctx->width;
+    status = CVPixelBufferPoolCreatePixelBuffer(NULL,
+                                                pool,
+                                                &pix_buf);
 
-    if (avctx->pix_fmt == AV_PIX_FMT_YUV420P) {
-        frame->linesize[1] =
-        frame->linesize[2] = (avctx->width + 1) / 2;
-    } else {
-        frame->linesize[1] = (avctx->width + 1) / 2;
+    if(status != kCVReturnSuccess){
+        av_log(avctx, AV_LOG_ERROR, "Error creating frame from pool: %d\n", status);
+        goto pe_cleanup;
     }
 
-    frame->format          = avctx->pix_fmt;
-    frame->width           = avctx->width;
-    frame->height          = avctx->height;
-    av_frame_set_colorspace(frame, avctx->colorspace);
-    av_frame_set_color_range(frame, avctx->color_range);
-    frame->color_trc       = avctx->color_trc;
-    frame->color_primaries = avctx->color_primaries;
+    time = CMTimeMake(0, avctx->time_base.den);
+    status = VTCompressionSessionEncodeFrame(vtctx->session,
+                                             pix_buf,
+                                             time,
+                                             kCMTimeInvalid,
+                                             NULL,
+                                             NULL,
+                                             NULL);
 
-    frame->pts = 0;
-    status = vtenc_send_frame(avctx, vtctx, frame);
     if (status) {
-        av_log(avctx, AV_LOG_ERROR, "Error sending frame: %d\n", status);
+        av_log(avctx,
+               AV_LOG_ERROR,
+               "Error sending frame for extradata: %d\n",
+               status);
+
         goto pe_cleanup;
     }
 
@@ -2368,8 +2329,6 @@ static int vtenc_populate_extradata(AVCodecContext   *avctx,
 
     CFRelease(buf);
 
-
-
 pe_cleanup:
     if(vtctx->session)
         CFRelease(vtctx->session);
@@ -2377,8 +2336,9 @@ pe_cleanup:
     vtctx->session = NULL;
     vtctx->frame_ct_out = 0;
 
-    av_frame_unref(frame);
-    av_frame_free(&frame);
+    if (pix_buf) {
+        CFRelease(pix_buf);
+    }
 
     av_assert0(status != 0 || (avctx->extradata && avctx->extradata_size > 0));
 

@@ -23,7 +23,6 @@
 #define AVCODEC_MIPS_MATHOPS_H
 
 #include <stdint.h>
-#include "config.h"
 #include "libavutil/common.h"
 
 #if HAVE_INLINE_ASM

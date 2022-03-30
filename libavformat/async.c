@@ -44,6 +44,7 @@
 #define BUFFER_CAPACITY         (4 * 1024 * 1024)
 #define READ_BACK_CAPACITY      (4 * 1024 * 1024)
 #define SHORT_SEEK_THRESHOLD    (256 * 1024)
+#define DUMP_BITSTREAM          (0)
 
 typedef struct RingBuffer
 {
@@ -75,9 +76,21 @@ typedef struct Context {
     pthread_cond_t  cond_wakeup_background;
     pthread_mutex_t mutex;
     pthread_t       async_buffer_thread;
+    int             async_buffer_exit;
 
     int             abort_request;
     AVIOInterruptCB interrupt_callback;
+
+    int             buffer_capacity;
+    int             read_back_capacity;
+    int             disable_short_seek;
+    int             short_seek_threshold;
+    uint64_t        off;
+    uint64_t        end_off;
+#if DUMP_BITSTREAM
+    FILE           *file;
+    int             dump_bitstream;
+#endif
 } Context;
 
 static int ring_init(RingBuffer *ring, unsigned int capacity, int read_back_capacity)
@@ -155,10 +168,7 @@ static int async_check_interrupt(void *arg)
     if (c->abort_request)
         return 1;
 
-    if (ff_check_interrupt(&c->interrupt_callback))
-        c->abort_request = 1;
-
-    return c->abort_request;
+    return ff_check_interrupt(&c->interrupt_callback);
 }
 
 static int wrapped_url_read(void *src, void *dst, int size)
@@ -189,8 +199,16 @@ static void *async_buffer_task(void *arg)
             c->io_eof_reached = 1;
             c->io_error       = AVERROR_EXIT;
             pthread_cond_signal(&c->cond_wakeup_main);
-            pthread_mutex_unlock(&c->mutex);
-            break;
+            if (c->abort_request) {
+                // close
+                pthread_mutex_unlock(&c->mutex);
+                break;
+            } else {
+                // interrupt
+                pthread_cond_wait(&c->cond_wakeup_background, &c->mutex);
+                pthread_mutex_unlock(&c->mutex);
+                continue;
+            }
         }
 
         if (c->seek_request) {
@@ -204,7 +222,6 @@ static void *async_buffer_task(void *arg)
             c->seek_completed = 1;
             c->seek_ret       = seek_ret;
             c->seek_request   = 0;
-
 
             pthread_cond_signal(&c->cond_wakeup_main);
             pthread_mutex_unlock(&c->mutex);
@@ -234,6 +251,8 @@ static void *async_buffer_task(void *arg)
         pthread_mutex_unlock(&c->mutex);
     }
 
+    av_log(h, AV_LOG_VERBOSE, "async buffer task thread exit\n");
+
     return NULL;
 }
 
@@ -243,9 +262,17 @@ static int async_open(URLContext *h, const char *arg, int flags, AVDictionary **
     int              ret;
     AVIOInterruptCB  interrupt_callback = {.callback = async_check_interrupt, .opaque = h};
 
+    av_dict_set_int(options, "offset", c->off, 0);
+    av_dict_set_int(options, "end_offset", c->end_off, 0);
+#if DUMP_BITSTREAM
+    av_dict_set(options, "dump_bitstream", c->dump_bitstream ? "true" : "false", 0);
+#endif
+
     av_strstart(arg, "async:", &arg);
 
-    ret = ring_init(&c->ring, BUFFER_CAPACITY, READ_BACK_CAPACITY);
+    av_log(h, AV_LOG_VERBOSE, "open url:%s\n", arg);
+
+    ret = ring_init(&c->ring, c->buffer_capacity, c->read_back_capacity);
     if (ret < 0)
         goto fifo_fail;
 
@@ -257,6 +284,7 @@ static int async_open(URLContext *h, const char *arg, int flags, AVDictionary **
         goto url_fail;
     }
 
+    c->logical_pos = c->off;
     c->logical_size = ffurl_size(c->inner);
     h->is_streamed  = c->inner->is_streamed;
 
@@ -300,10 +328,13 @@ fifo_fail:
     return ret;
 }
 
-static int async_close(URLContext *h)
+static int close_async_buffer(URLContext *h)
 {
     Context *c = h->priv_data;
     int      ret;
+
+    if (c->async_buffer_exit)
+        return 0;
 
     pthread_mutex_lock(&c->mutex);
     c->abort_request = 1;
@@ -314,12 +345,37 @@ static int async_close(URLContext *h)
     if (ret != 0)
         av_log(h, AV_LOG_ERROR, "pthread_join(): %s\n", av_err2str(ret));
 
+    c->async_buffer_exit = 1;
+
+    return ret;
+}
+
+static int async_shutdown(URLContext *h, int flags)
+{
+    Context *c = h->priv_data;
+
+    close_async_buffer(h);
+    ffurl_shutdown(c->inner, flags);
+
+    return 0;
+}
+
+static int async_close(URLContext *h)
+{
+    Context *c = h->priv_data;
+
+    close_async_buffer(h);
     pthread_cond_destroy(&c->cond_wakeup_background);
     pthread_cond_destroy(&c->cond_wakeup_main);
     pthread_mutex_destroy(&c->mutex);
     ffurl_close(c->inner);
     ring_destroy(&c->ring);
-
+#if DUMP_BITSTREAM
+    if (c->file) {
+        fclose(c->file);
+        c->file = NULL;
+    }
+#endif
     return 0;
 }
 
@@ -372,7 +428,19 @@ static int async_read_internal(URLContext *h, void *dest, int size, int read_com
 
 static int async_read(URLContext *h, unsigned char *buf, int size)
 {
-    return async_read_internal(h, buf, size, 0, NULL);
+    size = async_read_internal(h, buf, size, 0, NULL);
+#if DUMP_BITSTREAM
+    if (size > 0) {
+        Context *c = h->priv_data;
+        if (c->dump_bitstream && !c->file) {
+            c->file = fopen("/sdcard/ttplayer/async.debug", "wb+");
+        }
+        if (c->file) {
+            fwrite(buf, 1, size, c->file);
+        }
+    }
+#endif
+    return size;
 }
 
 static void fifo_do_not_copy_func(void* dest, void* src, int size) {
@@ -387,7 +455,8 @@ static int64_t async_seek(URLContext *h, int64_t pos, int whence)
     int64_t       new_logical_pos;
     int fifo_size;
     int fifo_size_of_read_back;
-
+    if(whence == AVSEEK_ADDR || whence == AVSEEK_CPSIZE || whence == AVSEEK_SETDUR)
+        return -1;
     if (whence == AVSEEK_SIZE) {
         av_log(h, AV_LOG_TRACE, "async_seek: AVSEEK_SIZE: %"PRId64"\n", (int64_t)c->logical_size);
         return c->logical_size;
@@ -402,17 +471,30 @@ static int64_t async_seek(URLContext *h, int64_t pos, int whence)
     }
     if (new_logical_pos < 0)
         return AVERROR(EINVAL);
+#if DUMP_BITSTREAM
+    if (c->file) {
+        fclose(c->file);
+        c->file = NULL;
+    }
+#endif
 
     fifo_size = ring_size(ring);
     fifo_size_of_read_back = ring_size_of_read_back(ring);
     if (new_logical_pos == c->logical_pos) {
         /* current position */
+        pthread_mutex_lock(&c->mutex);
+        if (c->io_eof_reached) {
+            c->io_eof_reached = 0;
+            c->io_error = 0;
+        }
+        pthread_mutex_unlock(&c->mutex);
         return c->logical_pos;
-    } else if ((new_logical_pos >= (c->logical_pos - fifo_size_of_read_back)) &&
-               (new_logical_pos < (c->logical_pos + fifo_size + SHORT_SEEK_THRESHOLD))) {
+    } else if (!c->disable_short_seek &&
+               (new_logical_pos >= (c->logical_pos - fifo_size_of_read_back)) &&
+               (new_logical_pos < (c->logical_pos + fifo_size + c->short_seek_threshold))) {
         int pos_delta = (int)(new_logical_pos - c->logical_pos);
         /* fast seek */
-        av_log(h, AV_LOG_TRACE, "async_seek: fask_seek %"PRId64" from %d dist:%d/%d\n",
+        av_log(h, AV_LOG_VERBOSE, "async_seek: fask_seek %"PRId64" from %d dist:%d/%d\n",
                 new_logical_pos, (int)c->logical_pos,
                 (int)(new_logical_pos - c->logical_pos), fifo_size);
 
@@ -424,17 +506,26 @@ static int64_t async_seek(URLContext *h, int64_t pos, int whence)
             ring_drain(ring, pos_delta);
             c->logical_pos = new_logical_pos;
         }
-
+        pthread_mutex_lock(&c->mutex);
+        if (c->io_eof_reached) {
+            c->io_eof_reached = 0;
+            c->io_error = 0;
+        }
+        pthread_mutex_unlock(&c->mutex);
         return c->logical_pos;
     } else if (c->logical_size <= 0) {
         /* can not seek */
         return AVERROR(EINVAL);
     } else if (new_logical_pos > c->logical_size) {
         /* beyond end */
+        av_log(h, AV_LOG_ERROR, "async_seek: new_logical_pos:%"PRId64" logical_size:%"PRId64"\n",
+            new_logical_pos, c->logical_size);
         return AVERROR(EINVAL);
     }
 
     pthread_mutex_lock(&c->mutex);
+
+    av_log(h, AV_LOG_VERBOSE, "async_seek pos:%"PRId64"\n", new_logical_pos);
 
     c->seek_request   = 1;
     c->seek_pos       = new_logical_pos;
@@ -466,6 +557,15 @@ static int64_t async_seek(URLContext *h, int64_t pos, int whence)
 #define D AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption options[] = {
+    { "buffer_capacity", "buffer capacity", OFFSET(buffer_capacity), AV_OPT_TYPE_INT, { .i64 = BUFFER_CAPACITY }, 0, INT_MAX, D },
+    { "read_back_capacity", "read back capacity", OFFSET(read_back_capacity), AV_OPT_TYPE_INT, { .i64 = READ_BACK_CAPACITY }, 0, INT_MAX, D },
+    { "disable_short_seek", "disable short seek", OFFSET(disable_short_seek), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
+    { "short_seek_threshold", "short seek threshold", OFFSET(short_seek_threshold), AV_OPT_TYPE_INT, { .i64 = SHORT_SEEK_THRESHOLD }, 0, INT_MAX, D },
+    { "offset", "initial byte offset", OFFSET(off), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
+    { "end_offset", "try to limit the request to bytes preceding this offset", OFFSET(end_off), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
+#if DUMP_BITSTREAM
+    { "dump_bitstream", "dump bitstream", OFFSET(dump_bitstream), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
+#endif
     {NULL},
 };
 
@@ -485,6 +585,7 @@ const URLProtocol ff_async_protocol = {
     .url_read            = async_read,
     .url_seek            = async_seek,
     .url_close           = async_close,
+    .url_shutdown        = async_shutdown,
     .priv_data_size      = sizeof(Context),
     .priv_data_class     = &async_context_class,
 };

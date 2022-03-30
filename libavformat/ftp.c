@@ -68,6 +68,7 @@ typedef struct {
     char *dir_buffer;
     size_t dir_buffer_size;
     size_t dir_buffer_offset;
+    uint64_t recv_size;
     int utf8;
 } FTPContext;
 
@@ -100,6 +101,7 @@ static int ftp_getc(FTPContext *s)
         } else if (!len) {
             return -1;
         } else {
+            s->recv_size += len;
             s->control_buf_ptr = s->control_buffer;
             s->control_buf_end = s->control_buffer + len;
         }
@@ -749,6 +751,11 @@ static int64_t ftp_seek(URLContext *h, int64_t pos, int whence)
             return AVERROR(EIO);
         new_pos = s->filesize + pos;
         break;
+    case AVSEEK_SETDUR:
+    case AVSEEK_ADDR:
+      return -1;
+    case AVSEEK_CPSIZE:
+	    return s->recv_size;
     default:
         return AVERROR(EINVAL);
     }
@@ -793,6 +800,7 @@ static int ftp_read(URLContext *h, unsigned char *buf, int size)
     if (s->conn_data && s->state == DOWNLOADING) {
         read = ffurl_read(s->conn_data, buf, size);
         if (read >= 0) {
+            s->recv_size +=read;
             s->position += read;
             if (s->position >= s->filesize) {
                 /* server will terminate, but keep current position to avoid madness */
@@ -887,7 +895,9 @@ static int ftp_get_file_handle(URLContext *h)
 static int ftp_shutdown(URLContext *h, int flags)
 {
     FTPContext *s = h->priv_data;
-
+    if(flags & AVIO_FLAG_STOP) {
+        return 0;
+    }
     ff_dlog(h, "ftp protocol shutdown\n");
 
     if (s->conn_data)
@@ -1011,6 +1021,7 @@ static int ftp_read_dir(URLContext *h, AVIODirEntry **next)
                 *next = NULL;
                 return 0;
             }
+            s->recv_size += ret;
             s->dir_buffer_size += ret;
             s->dir_buffer[s->dir_buffer_size] = 0;
             start = s->dir_buffer;

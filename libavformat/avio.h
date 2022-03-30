@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 #ifndef AVFORMAT_AVIO_H
 #define AVFORMAT_AVIO_H
@@ -58,6 +61,7 @@
 typedef struct AVIOInterruptCB {
     int (*callback)(void*);
     void *opaque;
+    int     fd;
 } AVIOInterruptCB;
 
 /**
@@ -298,7 +302,7 @@ typedef struct AVIOContext {
      * ',' separated list of allowed protocols.
      */
     const char *protocol_whitelist;
-
+    aptr_t aptr;
     /**
      * ',' separated list of disallowed protocols.
      */
@@ -497,6 +501,13 @@ void avio_write_marker(AVIOContext *s, int64_t time, enum AVIODataMarkerType typ
  * If it is not supported then the seek function will return <0.
  */
 #define AVSEEK_SIZE 0x10000
+#define AVSEEK_CPSIZE 0x1000
+#define AVSEEK_PERCENT 0x3000
+#define AVSEEK_ADDR 0x4000
+#define AVSEEK_SETDUR 0x2000
+#define AVSEEK_CACHEEND 0x5000
+#define AVSEEK_FILESET 0x6000
+#define AVSEEK_RESET_AUTO_RANGE 0x7000
 
 /**
  * Passing this flag as the "whence" parameter to a seek function causes it to
@@ -534,10 +545,21 @@ static av_always_inline int64_t avio_tell(AVIOContext *s)
 int64_t avio_size(AVIOContext *s);
 
 /**
+*get recved size.
+*@return recved size of AVERROR
+*/
+int64_t avio_recved(AVIOContext *s);
+/**
  * feof() equivalent for AVIOContext.
  * @return non zero if and only if end of file
  */
 int avio_feof(AVIOContext *s);
+int avio_feof_nonecheck(AVIOContext *s);
+/**
+* close auto range
+* @return 0 for success
+*/
+int avio_close_autorange(AVIOContext *s);
 #if FF_API_URL_FEOF
 /**
  * @deprecated use avio_feof()
@@ -645,7 +667,8 @@ int avio_get_str16be(AVIOContext *pb, int maxlen, char *buf, int buflen);
  * call the underlying seek function directly.
  */
 #define AVIO_FLAG_DIRECT 0x8000
-
+#define AVIO_FLAG_STOP    16
+#define AVIO_FLAG_REUSE   32
 /**
  * Create and initialize a AVIOContext for accessing the
  * resource indicated by url.
@@ -708,7 +731,7 @@ int avio_close(AVIOContext *s);
  */
 int avio_closep(AVIOContext **s);
 
-
+int avio_shutdown(AVIOContext* s,int flags);
 /**
  * Open a write only memory stream.
  *
@@ -824,4 +847,8 @@ int avio_accept(AVIOContext *s, AVIOContext **c);
  *           < 0 for an AVERROR code
  */
 int avio_handshake(AVIOContext *c);
+/**
+* return IO interrupt callback
+*/
+int avio_interrupt_callback(AVIOContext *c);
 #endif /* AVFORMAT_AVIO_H */

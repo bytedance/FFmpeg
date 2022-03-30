@@ -25,8 +25,15 @@
 #include "aes_internal.h"
 #include "intreadwrite.h"
 #include "timer.h"
+#include <string.h>
 
-const int av_aes_size= sizeof(AVAES);
+#include "config.h"
+
+#if CONFIG_OPENSSL
+#include <openssl/cipher.h>
+#endif
+
+const int av_aes_size = sizeof(AVAES);
 
 struct AVAES *av_aes_alloc(void)
 {
@@ -266,3 +273,100 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
     return 0;
 }
 
+#if CONFIG_OPENSSL
+
+int av_aes_gcm_256_decrypt(const unsigned char *ciphertext, int ciphertext_len,
+                           const unsigned char *aad, int aad_len,
+                           const unsigned char *tag,
+                           const unsigned char *key,
+                           const unsigned char *iv, int iv_len,
+                           unsigned char *plaintext)
+{
+    if (!ciphertext || !ciphertext_len || !key || !iv || !iv_len || !plaintext) {
+        return -1;
+    }
+
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int plaintext_len;
+    int ret;
+
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        return -1;
+    }
+
+    EVP_CIPHER_CTX_init(ctx);
+
+    if (!EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
+        return -1;
+    }
+
+    if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL)) {
+        return -1;
+    }
+
+    if (!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv)) {
+        return -1;
+    }
+
+    EVP_CIPHER_CTX_set_padding(ctx, EVP_CIPH_NO_PADDING);
+
+    if (aad && aad_len) {
+        EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len);
+    }
+
+    unsigned int blocksize = EVP_CIPHER_CTX_block_size(ctx);
+    uint size = ciphertext_len + blocksize - 1;
+
+    const int block_len = 16;
+    if (size < block_len) {
+        return -1;
+    }
+
+    unsigned char *outbuf = calloc(size, sizeof(unsigned char));
+    if (!outbuf) { 
+        return -1; 
+    } 
+
+    plaintext_len = 0;
+    while (plaintext_len < size - block_len) {
+        EVP_DecryptUpdate(ctx, outbuf + plaintext_len, &len, ciphertext + plaintext_len, block_len);
+        plaintext_len += len;
+    }
+
+    const int tag_len = 16;
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tag_len, (unsigned char *)ciphertext + ciphertext_len - tag_len);
+
+    ret = EVP_DecryptFinal_ex(ctx, outbuf + plaintext_len, &len);
+
+    memcpy(plaintext, outbuf, plaintext_len);
+    if (strlen((const char *)plaintext) > plaintext_len) {
+        memset(plaintext + plaintext_len, '\0', strlen((const char *)plaintext) - plaintext_len);
+    }
+    free(outbuf); 
+    outbuf = NULL;
+    
+    EVP_CIPHER_CTX_cleanup(ctx);
+    EVP_CIPHER_CTX_free(ctx);
+
+    if (ret > 0) {
+        plaintext_len += len;
+        return plaintext_len;
+    } else {
+        return -1;
+    }
+}
+
+#else
+
+int av_aes_gcm_256_decrypt(const unsigned char *ciphertext, int ciphertext_len,
+                           const unsigned char *aad, int aad_len,
+                           const unsigned char *tag,
+                           const unsigned char *key,
+                           const unsigned char *iv, int iv_len,
+                           unsigned char *plaintext)
+{
+    return -1;
+}
+
+#endif

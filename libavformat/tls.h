@@ -39,7 +39,7 @@ typedef struct TLSShared {
 
     char underlying_host[200];
     int numerichost;
-
+    int port;
     URLContext *tcp;
 } TLSShared;
 

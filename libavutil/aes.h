@@ -59,6 +59,27 @@ int av_aes_init(struct AVAES *a, const uint8_t *key, int key_bits, int decrypt);
 void av_aes_crypt(struct AVAES *a, uint8_t *dst, const uint8_t *src, int count, uint8_t *iv, int decrypt);
 
 /**
+ * @brief Decrypt a cipher to plain text, using gcm 256 mode. 
+ * 
+ * @param ciphertext encrypted text to be decrypt, bytes array.
+ * @param ciphertext_len length of the ciphertext's byte array.
+ * @param aad not necessary 
+ * @param aad_len not necessary
+ * @param tag not necessary.
+ * @param key aes gcm decrypt key 
+ * @param iv initial vector (aka. nonce)
+ * @param iv_len number of bytes of iv.
+ * @param plaintext output decrypted text to plaintext
+ * @return int length of output plaintext, if >0, decrypt successfully, any other else value should be treated as failure.
+ */
+int av_aes_gcm_256_decrypt(const unsigned char *ciphertext, int ciphertext_len,
+                           const unsigned char *aad, int aad_len,
+                           const unsigned char *tag,
+                           const unsigned char *key,
+                           const unsigned char *iv, int iv_len,
+                           unsigned char *plaintext);
+
+/**
  * @}
  */
 

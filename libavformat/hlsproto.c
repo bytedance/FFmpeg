@@ -146,7 +146,7 @@ static int parse_playlist(URLContext *h, const char *url)
             s->finished = 1;
         } else if (av_strstart(line, "#EXTINF:", &ptr)) {
             is_segment = 1;
-            duration = atof(ptr) * AV_TIME_BASE;
+            duration = strtod(ptr, NULL) * AV_TIME_BASE;
         } else if (av_strstart(line, "#", NULL)) {
             continue;
         } else if (line[0]) {

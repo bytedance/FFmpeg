@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include "libavutil/avstring.h"
@@ -76,6 +79,9 @@ typedef struct FileContext {
 #if HAVE_DIRENT_H
     DIR *dir;
 #endif
+    int64_t startOffset;
+    int64_t declareLength;
+    int64_t readOffset;
 } FileContext;
 
 static const AVOption file_options[] = {
@@ -87,6 +93,8 @@ static const AVOption file_options[] = {
 
 static const AVOption pipe_options[] = {
     { "blocksize", "set I/O operation maximum block size", offsetof(FileContext, blocksize), AV_OPT_TYPE_INT, { .i64 = INT_MAX }, 1, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM },
+    { "startOffset", "set pipe fd startOffset", offsetof(FileContext, startOffset), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT64_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "declareLength", "set pipe fd declareLength", offsetof(FileContext, declareLength), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT64_MAX, AV_OPT_FLAG_ENCODING_PARAM},
     { NULL }
 };
 
@@ -109,7 +117,12 @@ static int file_read(URLContext *h, unsigned char *buf, int size)
     FileContext *c = h->priv_data;
     int ret;
     size = FFMIN(size, c->blocksize);
+    if (c->declareLength > 0)
+        size = FFMIN(c->declareLength - c->readOffset, size);
     ret = read(c->fd, buf, size);
+    c->readOffset += ret;
+    if (c->declareLength > 0 && c->readOffset > c->declareLength)
+        return AVERROR_EOF;
     if (ret == 0 && c->follow)
         return AVERROR(EAGAIN);
     return (ret == -1) ? AVERROR(errno) : ret;
@@ -224,7 +237,7 @@ static int file_open(URLContext *h, const char *filename, int flags)
     if (fd == -1)
         return AVERROR(errno);
     c->fd = fd;
-
+    c->readOffset = 0;
     h->is_streamed = !fstat(fd, &st) && S_ISFIFO(st.st_mode);
 
     return 0;
@@ -236,13 +249,19 @@ static int64_t file_seek(URLContext *h, int64_t pos, int whence)
     FileContext *c = h->priv_data;
     int64_t ret;
 
-    if (whence == AVSEEK_SIZE) {
+    if (whence == AVSEEK_SIZE || whence == AVSEEK_CPSIZE) {
+        if (c->declareLength > 0)
+            return c->declareLength;
         struct stat st;
         ret = fstat(c->fd, &st);
         return ret < 0 ? AVERROR(errno) : (S_ISFIFO(st.st_mode) ? 0 : st.st_size);
     }
-
-    ret = lseek(c->fd, pos, whence);
+    if(whence == AVSEEK_ADDR || whence == AVSEEK_SETDUR)
+        return -1;
+    ret = lseek(c->fd, pos + c->startOffset, whence);
+    if (whence == SEEK_SET && ret >= 0 && c->startOffset >= 0) {
+        ret = c->readOffset = pos;
+    }
 
     return ret < 0 ? AVERROR(errno) : ret;
 }
@@ -375,11 +394,29 @@ static int pipe_open(URLContext *h, const char *filename, int flags)
             fd = 0;
         }
     }
+    //add by teddy support android internal fd playback
+    if (c->declareLength > 0) {
+        struct stat s;
+        if (fstat(fd, &s) == 0) {
+            if (c->startOffset > s.st_size) {
+                c->startOffset = s.st_size;
+                c->declareLength = 0;
+            }
+            if (c->startOffset + c->declareLength > s.st_size) {
+                c->declareLength = s.st_size - c->startOffset;
+            }
+            av_log(NULL, AV_LOG_DEBUG, "pipe open, offset: %lld, length: %lld", c->startOffset, c->declareLength);
+        }
+        if (lseek(fd, c->startOffset, SEEK_SET) < 0) {
+            return AVERROR(ENOSYS);
+        }
+    }
 #if HAVE_SETMODE
     setmode(fd, O_BINARY);
 #endif
     c->fd = fd;
-    h->is_streamed = 1;
+    c->readOffset = 0;
+    h->is_streamed = 0;
     return 0;
 }
 
@@ -388,6 +425,7 @@ const URLProtocol ff_pipe_protocol = {
     .url_open            = pipe_open,
     .url_read            = file_read,
     .url_write           = file_write,
+    .url_seek            = file_seek,
     .url_get_file_handle = file_get_handle,
     .url_check           = file_check,
     .priv_data_size      = sizeof(FileContext),

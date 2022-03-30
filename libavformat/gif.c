@@ -144,6 +144,8 @@ static int flush_packet(AVFormatContext *s, AVPacket *new)
     AVIOContext *pb = s->pb;
     const uint32_t *palette;
     AVPacket *pkt = gif->prev_pkt;
+    uint8_t *disposal;
+    uint8_t packed;
 
     if (!pkt)
         return 0;
@@ -157,16 +159,28 @@ static int flush_packet(AVFormatContext *s, AVPacket *new)
     }
     bcid = get_palette_transparency_index(palette);
 
+    disposal = av_packet_get_side_data(pkt, AV_PKT_DATA_GIF_FRAME_DISPOSAL, &size);
+    if (disposal && size != 1) {
+        av_log(s, AV_LOG_ERROR, "Invalid gif frame disposal extradata\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     if (new && new->pts != AV_NOPTS_VALUE)
         gif->duration = av_clip_uint16(new->pts - gif->prev_pkt->pts);
     else if (!new && gif->last_delay >= 0)
         gif->duration = gif->last_delay;
 
     /* graphic control extension block */
+    if (disposal) {
+        packed = (0xff & (*disposal)<<2) | (bcid >= 0);
+    } else {
+        packed = 1<<2 | (bcid >= 0);
+    }
+
     avio_w8(pb, 0x21);
     avio_w8(pb, 0xf9);
     avio_w8(pb, 0x04); /* block size */
-    avio_w8(pb, 1<<2 | (bcid >= 0));
+    avio_w8(pb, packed);
     avio_wl16(pb, gif->duration);
     avio_w8(pb, bcid < 0 ? DEFAULT_TRANSPARENCY_INDEX : bcid);
     avio_w8(pb, 0x00);

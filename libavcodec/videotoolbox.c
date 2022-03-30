@@ -28,8 +28,10 @@
 #endif
 #include "vda_vt_internal.h"
 #include "libavutil/avutil.h"
+#include "libavutil/hwcontext.h"
 #include "bytestream.h"
 #include "h264dec.h"
+#include "hevcdec.h"
 #include "mpegvideo.h"
 #include <TargetConditionals.h>
 
@@ -37,7 +39,13 @@
 #  define kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder CFSTR("RequireHardwareAcceleratedVideoDecoder")
 #endif
 
+#if !HAVE_KCMVIDEOCODECTYPE_HEVC
+enum { kCMVideoCodecType_HEVC = 'hvc1' };
+#endif
+
 #define VIDEOTOOLBOX_ESDS_EXTRADATA_PADDING  12
+
+static void* gVideotoolboxOpaqueID = &gVideotoolboxOpaqueID;
 
 static void videotoolbox_buffer_release(void *opaque, uint8_t *data)
 {
@@ -106,6 +114,164 @@ CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
     memcpy(p + 3, h->ps.pps->data, h->ps.pps->data_size);
 
     p += 3 + h->ps.pps->data_size;
+    av_assert0(p - vt_extradata == vt_extradata_size);
+
+    data = CFDataCreate(kCFAllocatorDefault, vt_extradata, vt_extradata_size);
+    av_free(vt_extradata);
+    return data;
+}
+
+CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
+{
+    HEVCContext *h = avctx->priv_data;
+    const HEVCVPS *vps = (const HEVCVPS *)h->ps.vps_list[0]->data;
+    const HEVCSPS *sps = (const HEVCSPS *)h->ps.sps_list[0]->data;
+    int i, num_pps = 0;
+    const HEVCPPS *pps = h->ps.pps;
+    PTLCommon ptlc = vps->ptl.general_ptl;
+    VUI vui = sps->vui;
+    uint8_t parallelismType;
+    CFDataRef data = NULL;
+    uint8_t *p;
+    int vt_extradata_size = 23 + 5 + vps->data_size + 5 + sps->data_size + 3;
+    uint8_t *vt_extradata;
+
+    for (i = 0; i < MAX_PPS_COUNT; i++) {
+        if (h->ps.pps_list[i]) {
+            const HEVCPPS *pps = (const HEVCPPS *)h->ps.pps_list[i]->data;
+            vt_extradata_size += 2 + pps->data_size;
+            num_pps++;
+        }
+    }
+
+    vt_extradata = av_malloc(vt_extradata_size);
+    if (!vt_extradata)
+        return NULL;
+    p = vt_extradata;
+
+    /* unsigned int(8) configurationVersion = 1; */
+    AV_W8(p + 0, 1);
+
+    /*
+     * unsigned int(2) general_profile_space;
+     * unsigned int(1) general_tier_flag;
+     * unsigned int(5) general_profile_idc;
+     */
+    AV_W8(p + 1, ptlc.profile_space << 6 |
+                 ptlc.tier_flag     << 5 |
+                 ptlc.profile_idc);
+
+    /* unsigned int(32) general_profile_compatibility_flags; */
+    memcpy(p + 2, ptlc.profile_compatibility_flag, 4);
+
+    /* unsigned int(48) general_constraint_indicator_flags; */
+    AV_W8(p + 6, ptlc.progressive_source_flag    << 7 |
+                 ptlc.interlaced_source_flag     << 6 |
+                 ptlc.non_packed_constraint_flag << 5 |
+                 ptlc.frame_only_constraint_flag << 4);
+    AV_W8(p + 7, 0);
+    AV_WN32(p + 8, 0);
+
+    /* unsigned int(8) general_level_idc; */
+    AV_W8(p + 12, ptlc.level_idc);
+
+    /*
+     * bit(4) reserved = ‘1111’b;
+     * unsigned int(12) min_spatial_segmentation_idc;
+     */
+    AV_W8(p + 13, 0xf0 | (vui.min_spatial_segmentation_idc >> 4));
+    AV_W8(p + 14, vui.min_spatial_segmentation_idc & 0xff);
+
+    /*
+     * bit(6) reserved = ‘111111’b;
+     * unsigned int(2) parallelismType;
+     */
+    if (!vui.min_spatial_segmentation_idc)
+        parallelismType = 0;
+    else if (pps->entropy_coding_sync_enabled_flag && pps->tiles_enabled_flag)
+        parallelismType = 0;
+    else if (pps->entropy_coding_sync_enabled_flag)
+        parallelismType = 3;
+    else if (pps->tiles_enabled_flag)
+        parallelismType = 2;
+    else
+        parallelismType = 1;
+    AV_W8(p + 15, 0xfc | parallelismType);
+
+    /*
+     * bit(6) reserved = ‘111111’b;
+     * unsigned int(2) chromaFormat;
+     */
+    AV_W8(p + 16, sps->chroma_format_idc | 0xfc);
+
+    /*
+     * bit(5) reserved = ‘11111’b;
+     * unsigned int(3) bitDepthLumaMinus8;
+     */
+    AV_W8(p + 17, (sps->bit_depth - 8) | 0xfc);
+
+    /*
+     * bit(5) reserved = ‘11111’b;
+     * unsigned int(3) bitDepthChromaMinus8;
+     */
+    AV_W8(p + 18, (sps->bit_depth_chroma - 8) | 0xfc);
+
+    /* bit(16) avgFrameRate; */
+    AV_WB16(p + 19, 0);
+
+    /*
+     * bit(2) constantFrameRate;
+     * bit(3) numTemporalLayers;
+     * bit(1) temporalIdNested;
+     * unsigned int(2) lengthSizeMinusOne;
+     */
+    AV_W8(p + 21, 0                             << 6 |
+                  sps->max_sub_layers           << 3 |
+                  sps->temporal_id_nesting_flag << 2 |
+                  3);
+
+    /* unsigned int(8) numOfArrays; */
+    AV_W8(p + 22, 3);
+
+    p += 23;
+    /* vps */
+    /*
+     * bit(1) array_completeness;
+     * unsigned int(1) reserved = 0;
+     * unsigned int(6) NAL_unit_type;
+     */
+    AV_W8(p, 1 << 7 |
+             HEVC_NAL_VPS & 0x3f);
+    /* unsigned int(16) numNalus; */
+    AV_WB16(p + 1, 1);
+    /* unsigned int(16) nalUnitLength; */
+    AV_WB16(p + 3, vps->data_size);
+    /* bit(8*nalUnitLength) nalUnit; */
+    memcpy(p + 5, vps->data, vps->data_size);
+    p += 5 + vps->data_size;
+
+    /* sps */
+    AV_W8(p, 1 << 7 |
+             HEVC_NAL_SPS & 0x3f);
+    AV_WB16(p + 1, 1);
+    AV_WB16(p + 3, sps->data_size);
+    memcpy(p + 5, sps->data, sps->data_size);
+    p += 5 + sps->data_size;
+
+    /* pps */
+    AV_W8(p, 1 << 7 |
+             HEVC_NAL_PPS & 0x3f);
+    AV_WB16(p + 1, num_pps);
+    p += 3;
+    for (i = 0; i < MAX_PPS_COUNT; i++) {
+        if (h->ps.pps_list[i]) {
+            const HEVCPPS *pps = (const HEVCPPS *)h->ps.pps_list[i]->data;
+            AV_WB16(p, pps->data_size);
+            memcpy(p + 2, pps->data, pps->data_size);
+            p += 2 + pps->data_size;
+        }
+    }
+
     av_assert0(p - vt_extradata == vt_extradata_size);
 
     data = CFDataCreate(kCFAllocatorDefault, vt_extradata, vt_extradata_size);
@@ -376,6 +542,18 @@ static int videotoolbox_h264_end_frame(AVCodecContext *avctx)
     return videotoolbox_common_end_frame(avctx, frame);
 }
 
+static int videotoolbox_hevc_end_frame(AVCodecContext *avctx)
+{
+    HEVCContext *h = avctx->priv_data;
+    AVFrame *frame = h->ref->frame;
+    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+    int ret;
+
+    ret = videotoolbox_common_end_frame(avctx, frame);
+    vtctx->bitstream_size = 0;
+    return ret;
+}
+
 static int videotoolbox_mpeg_start_frame(AVCodecContext *avctx,
                                          const uint8_t *buffer,
                                          uint32_t size)
@@ -432,6 +610,11 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
             if (data)
                 CFDictionarySetValue(avc_info, CFSTR("avcC"), data);
             break;
+        case kCMVideoCodecType_HEVC :
+            data = ff_videotoolbox_hvcc_extradata_create(avctx);
+            if (data)
+                CFDictionarySetValue(avc_info, CFSTR("hvcC"), data);
+            break;
         default:
             break;
         }
@@ -445,6 +628,56 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
 
         CFRelease(avc_info);
     }
+
+    enum AVColorPrimaries colorPrimaries = avctx->color_primaries;
+    CFStringRef colorPrimariesStr;
+    switch (colorPrimaries) {
+        case AVCOL_PRI_BT709:
+          colorPrimariesStr = kCVImageBufferColorPrimaries_ITU_R_709_2;
+          break;
+        case AVCOL_PRI_BT2020:
+          colorPrimariesStr = kCVImageBufferColorPrimaries_ITU_R_2020;
+          break;
+        default:
+          colorPrimariesStr = kCVImageBufferColorPrimaries_ITU_R_709_2;
+    }
+    CFDictionarySetValue(config_info, kCVImageBufferColorPrimariesKey, colorPrimariesStr);
+
+    enum AVColorTransferCharacteristic colorTrc = avctx->color_trc;
+    CFStringRef colorTrcStr;
+    switch (colorTrc) {
+        case AVCOL_PRI_BT709:
+          colorTrcStr = kCVImageBufferTransferFunction_ITU_R_709_2;
+          break;
+        default:
+          colorTrcStr = kCVImageBufferTransferFunction_ITU_R_709_2;
+    }
+    CFDictionarySetValue(config_info, kCVImageBufferTransferFunctionKey, colorTrcStr);
+
+    enum AVColorSpace colorSpace = avctx->colorspace;
+    CFStringRef yCbCrMatrixStr;
+    switch(colorSpace) {
+        case AVCOL_SPC_BT709:
+            yCbCrMatrixStr = kCVImageBufferYCbCrMatrix_ITU_R_709_2;
+            break;
+        case AVCOL_SPC_BT470BG:
+        case AVCOL_SPC_SMPTE170M:
+            yCbCrMatrixStr = kCVImageBufferYCbCrMatrix_ITU_R_601_4;
+            break;
+        case AVCOL_SPC_SMPTE240M:
+            yCbCrMatrixStr = kCVImageBufferYCbCrMatrix_SMPTE_240M_1995;
+            break;
+        case AVCOL_SPC_BT2020_NCL:
+            yCbCrMatrixStr = kCVImageBufferYCbCrMatrix_ITU_R_2020;
+            break;
+        default:
+            yCbCrMatrixStr = kCVImageBufferYCbCrMatrix_ITU_R_709_2;
+     }
+    CFDictionarySetValue(config_info, kCVImageBufferYCbCrMatrixKey, yCbCrMatrixStr);
+
+    CFDictionarySetValue(config_info, kCVImageBufferChromaLocationBottomFieldKey, kCVImageBufferChromaLocation_Left);
+    CFDictionarySetValue(config_info, kCVImageBufferChromaLocationTopFieldKey, kCVImageBufferChromaLocation_Left);
+
     return config_info;
 }
 
@@ -531,6 +764,9 @@ static int videotoolbox_default_init(AVCodecContext *avctx)
     case AV_CODEC_ID_H264 :
         videotoolbox->cm_codec_type = kCMVideoCodecType_H264;
         break;
+    case AV_CODEC_ID_HEVC :
+        videotoolbox->cm_codec_type = kCMVideoCodecType_HEVC;
+        break;
     case AV_CODEC_ID_MPEG1VIDEO :
         videotoolbox->cm_codec_type = kCMVideoCodecType_MPEG1Video;
         break;
@@ -558,9 +794,16 @@ static int videotoolbox_default_init(AVCodecContext *avctx)
         return -1;
     }
 
-    buf_attr = videotoolbox_buffer_attributes_create(avctx->width,
-                                                     avctx->height,
-                                                     videotoolbox->cv_pix_fmt_type);
+    AVVideotoolboxOpaque *vtf = (AVVideotoolboxOpaque *)avctx->opaque;
+    if (vtf && vtf->id == gVideotoolboxOpaqueID) {
+        buf_attr = videotoolbox_buffer_attributes_create(vtf->width,
+                                                         vtf->height,
+                                                         videotoolbox->cv_pix_fmt_type);
+    } else {
+        buf_attr = videotoolbox_buffer_attributes_create(avctx->width,
+                                                         avctx->height,
+                                                         videotoolbox->cv_pix_fmt_type);
+    }
 
     decoder_cb.decompressionOutputCallback = videotoolbox_decoder_callback;
     decoder_cb.decompressionOutputRefCon   = avctx;
@@ -579,15 +822,21 @@ static int videotoolbox_default_init(AVCodecContext *avctx)
 
     switch (status) {
     case kVTVideoDecoderNotAvailableNowErr:
+        av_log(avctx, AV_LOG_VERBOSE, "VideoToolbox session not available.\n");
+        return AVERROR(ENOSYS);
     case kVTVideoDecoderUnsupportedDataFormatErr:
+        av_log(avctx, AV_LOG_VERBOSE, "VideoToolbox does not support this format.\n");
         return AVERROR(ENOSYS);
     case kVTVideoDecoderMalfunctionErr:
+        av_log(avctx, AV_LOG_VERBOSE, "VideoToolbox malfunction.\n");
         return AVERROR(EINVAL);
     case kVTVideoDecoderBadDataErr :
+        av_log(avctx, AV_LOG_VERBOSE, "VideoToolbox reported invalid data.\n");
         return AVERROR_INVALIDDATA;
     case 0:
         return 0;
     default:
+        av_log(avctx, AV_LOG_VERBOSE, "Unknown VideoToolbox session creation error %u\n", (unsigned)status);
         return AVERROR_UNKNOWN;
     }
 }
@@ -616,6 +865,19 @@ AVHWAccel ff_h263_videotoolbox_hwaccel = {
     .start_frame    = videotoolbox_mpeg_start_frame,
     .decode_slice   = videotoolbox_mpeg_decode_slice,
     .end_frame      = videotoolbox_mpeg_end_frame,
+    .uninit         = ff_videotoolbox_uninit,
+    .priv_data_size = sizeof(VTContext),
+};
+
+AVHWAccel ff_hevc_videotoolbox_hwaccel = {
+    .name           = "hevc_videotoolbox",
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HEVC,
+    .pix_fmt        = AV_PIX_FMT_VIDEOTOOLBOX,
+    .alloc_frame    = ff_videotoolbox_alloc_frame,
+    .start_frame    = ff_videotoolbox_h264_start_frame,
+    .decode_slice   = ff_videotoolbox_h264_decode_slice,
+    .end_frame      = videotoolbox_hevc_end_frame,
     .uninit         = ff_videotoolbox_uninit,
     .priv_data_size = sizeof(VTContext),
 };
@@ -703,4 +965,14 @@ void av_videotoolbox_default_free(AVCodecContext *avctx)
     videotoolbox_default_free(avctx);
     av_freep(&avctx->hwaccel_context);
 }
+
+AVVideotoolboxOpaque *av_videotoolbox_create_opaque() 
+{
+    AVVideotoolboxOpaque *opaque = av_mallocz(sizeof(AVVideotoolboxOpaque));
+    if (opaque) {
+        opaque->id = gVideotoolboxOpaqueID;
+    }
+    return opaque;
+}
+
 #endif /* CONFIG_VIDEOTOOLBOX */

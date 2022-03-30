@@ -268,6 +268,12 @@ int av_strncasecmp(const char *a, const char *b, size_t n);
 
 
 /**
+ * Locale-independent strings replace.
+ * @note This means only ASCII-range characters are replace
+ */
+char *av_strireplace(const char *str, const char *from, const char *to);
+
+/**
  * Thread safe basename.
  * @param path the path, on DOS both \ and / are considered separators.
  * @return pointer to the basename substring.
@@ -399,4 +405,9 @@ int av_match_list(const char *name, const char *list, char separator);
  * @}
  */
 
+size_t av_str_strip(const char* pStr, const char c);
+
+size_t av_str_strip_r(const char* pStr, const char c);
+
+void av_str_split(char* pStr, const char* str, int size, char* pList[]);
 #endif /* AVUTIL_AVSTRING_H */

@@ -239,7 +239,9 @@ enum AVOptionType{
     AV_OPT_TYPE_CHANNEL_LAYOUT = MKBETAG('C','H','L','A'),
     AV_OPT_TYPE_BOOL           = MKBETAG('B','O','O','L'),
 };
-
+#define AV_OPT_TYPE_APTR AV_OPT_TYPE_UINT64
+#define APTR_MIN 0
+#define APTR_MAX UINT64_MAX
 /**
  * AVOption
  */

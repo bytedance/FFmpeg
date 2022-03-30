@@ -33,6 +33,10 @@
 #define URL_PROTOCOL_FLAG_NESTED_SCHEME 1 /*< The protocol name can be the first part of a nested protocol scheme */
 #define URL_PROTOCOL_FLAG_NETWORK       2 /*< The protocol uses network */
 
+#define SANDBOX_CHECK_URL_PROCEED 1 /** sandbox check succeed */
+
+int sandbox_check_url(const char *url, const char *param, const char *header);
+
 extern const AVClass ffurl_context_class;
 
 typedef struct URLContext {
@@ -48,7 +52,10 @@ typedef struct URLContext {
     int64_t rw_timeout;         /**< maximum time to wait for (network) read/write operation completion, in mcs */
     const char *protocol_whitelist;
     const char *protocol_blacklist;
+    aptr_t aptr;         /**log handle**/
 } URLContext;
+
+typedef char* (*getTcpHostIP)(URLContext* h);
 
 typedef struct URLProtocol {
     const char *name;
@@ -312,6 +319,8 @@ int ff_url_join(char *str, int size, const char *proto,
  * @param rel the new url, which is interpreted relative to base
  */
 void ff_make_absolute_url(char *buf, int size, const char *base,
+                          const char *rel);
+void ff_make_absolute_url2(char *buf, int size, const char *base,
                           const char *rel);
 
 /**

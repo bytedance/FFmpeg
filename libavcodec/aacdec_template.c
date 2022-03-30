@@ -3109,7 +3109,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
         ac->oc[1].status = OC_LOCKED;
     }
 
-    if (multiplier)
+    if (multiplier && !ac->fix_sbr_skip_samples)
         avctx->internal->skip_samples_multiplier = 2;
 
     if (!ac->frame->data[0] && samples) {
@@ -3159,21 +3159,14 @@ static int aac_decode_frame(AVCodecContext *avctx, void *data,
     const uint8_t *jp_dualmono   = av_packet_get_side_data(avpkt,
                                        AV_PKT_DATA_JP_DUALMONO,
                                        &jp_dualmono_size);
-
-    if (new_extradata && 0) {
-        av_free(avctx->extradata);
-        avctx->extradata = av_mallocz(new_extradata_size +
-                                      AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!avctx->extradata)
-            return AVERROR(ENOMEM);
-        avctx->extradata_size = new_extradata_size;
-        memcpy(avctx->extradata, new_extradata, new_extradata_size);
-        push_output_configuration(ac);
-        if (decode_audio_specific_config(ac, ac->avctx, &ac->oc[1].m4ac,
-                                         avctx->extradata,
-                                         avctx->extradata_size*8LL, 1) < 0) {
-            pop_output_configuration(ac);
-            return AVERROR_INVALIDDATA;
+    // sync VLC ffmpeg patch
+    if (ac->handle_audio_extradata && new_extradata) {
+        ac->oc[1].status = OC_NONE;
+        err = decode_audio_specific_config(ac, ac->avctx, &ac->oc[1].m4ac,
+                                           new_extradata,
+                                           new_extradata_size * 8LL, 1);
+        if (err < 0) {
+            return err;
         }
     }
 
@@ -3264,6 +3257,9 @@ static const AVOption options[] = {
     {"main", "Select Main/Left channel", 0, AV_OPT_TYPE_CONST, {.i64= 1}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"sub" , "Select Sub/Right channel", 0, AV_OPT_TYPE_CONST, {.i64= 2}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"both", "Select both channels",     0, AV_OPT_TYPE_CONST, {.i64= 0}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
+
+    { "handle_audio_extradata", "handle audio extradata", offsetof(AACContext, handle_audio_extradata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1,  AACDEC_FLAGS },
+    { "fix_sbr_skip_samples", "fix HE AAC SBR skip samples multiplier incorrect", offsetof(AACContext, fix_sbr_skip_samples), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1,  AACDEC_FLAGS},
 
     {NULL},
 };

@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 /**
@@ -93,6 +96,8 @@ typedef struct UDPContext {
     int dest_addr_len;
     int is_connected;
 
+    int cal_real_speed;
+
     /* Circular Buffer variables for use in UDP receive code */
     int circular_buffer_size;
     AVFifoBuffer *fifo;
@@ -113,6 +118,11 @@ typedef struct UDPContext {
     struct sockaddr_storage local_addr_storage;
     char *sources;
     char *block;
+    int user_flag;
+    aptr_t aptr;
+    aptr_t cbptr;
+    int ttmp_dns_parse_enable;
+    int ttmp_dns_parse_timeout;
 } UDPContext;
 
 #define OFFSET(x) offsetof(UDPContext, x)
@@ -132,11 +142,17 @@ static const AVOption options[] = {
     { "broadcast", "explicitly allow or disallow broadcast destination",   OFFSET(is_broadcast),   AV_OPT_TYPE_BOOL,   { .i64 = 0  },     0, 1,       E },
     { "ttl",            "Time to live (multicast only)",                   OFFSET(ttl),            AV_OPT_TYPE_INT,    { .i64 = 16 },     0, INT_MAX, E },
     { "connect",        "set if connect() should be called on socket",     OFFSET(is_connected),   AV_OPT_TYPE_BOOL,   { .i64 =  0 },     0, 1,       .flags = D|E },
+    { "cal_real_speed", "for udp base protocols, calculate real download speed",    OFFSET(cal_real_speed), AV_OPT_TYPE_BOOL,   { .i64 =  0 },     0, 1,       .flags = D|E },
     { "fifo_size",      "set the UDP receiving circular buffer size, expressed as a number of packets with size of 188 bytes", OFFSET(circular_buffer_size), AV_OPT_TYPE_INT, {.i64 = 7*4096}, 0, INT_MAX, D },
     { "overrun_nonfatal", "survive in case of UDP receiving circular buffer overrun", OFFSET(overrun_nonfatal), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1,    D },
     { "timeout",        "set raise error timeout (only in read mode)",     OFFSET(timeout),        AV_OPT_TYPE_INT,    { .i64 = 0 },      0, INT_MAX, D },
     { "sources",        "Source list",                                     OFFSET(sources),        AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
     { "block",          "Block list",                                      OFFSET(block),          AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
+    { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
+    { "aptr", "set app ptr for ffmpeg", OFFSET(aptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
+    { "cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
+    { "ttmp_dns_parse_enable", "enable ttmp dns parse", OFFSET(ttmp_dns_parse_enable), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, .flags = D|E },
+    { "ttmp_dns_parse_timeout", "ttmp dns parse timeout", OFFSET(ttmp_dns_parse_timeout), AV_OPT_TYPE_INT, { .i64 = 5000000 }, -1, INT_MAX, .flags = D|E },
     { NULL }
 };
 
@@ -251,6 +267,7 @@ static struct addrinfo *udp_resolve_host(URLContext *h,
                                          const char *hostname, int port,
                                          int type, int family, int flags)
 {
+    UDPContext *s = h->priv_data;
     struct addrinfo hints = { 0 }, *res = 0;
     int error;
     char sport[16];
@@ -266,12 +283,65 @@ static struct addrinfo *udp_resolve_host(URLContext *h,
     hints.ai_socktype = type;
     hints.ai_family   = family;
     hints.ai_flags = flags;
-    if ((error = getaddrinfo(node, service, &hints, &res))) {
-        res = NULL;
-        av_log(h, AV_LOG_ERROR, "getaddrinfo(%s, %s): %s\n",
+    if (!s->ttmp_dns_parse_enable || !hostname || h->interrupt_callback.callback == NULL || ff_isupport_getaddrinfo_a(s->cbptr) == 0 || s->aptr == 0) {
+        av_log(h, AV_LOG_DEBUG, "use getaddrinfo dns parse");
+        if ((error = getaddrinfo(node, service, &hints, &res))) {
+            res = NULL;
+            av_log(h, AV_LOG_ERROR, "getaddrinfo(%s, %s): %s\n",
                node ? node : "unknown",
                service,
                gai_strerror(error));
+        } else if (node) {
+            ff_isave_host_addr(s->cbptr, s->aptr, node, s->user_flag);
+        }
+    } else {
+        av_log(h, AV_LOG_DEBUG, "use ttmp dns parse");
+        void* ctx = NULL;
+        int timelost = 0;
+        if (s->ttmp_dns_parse_timeout <= 0) {
+            s->ttmp_dns_parse_timeout = 5000000;
+        }
+        ctx = ff_igetaddrinfo_a_start(s->cbptr, s->aptr, node, s->user_flag);
+        if(ctx == NULL) {
+            av_fatal(h, AVERROR_GET_ADDR_INFO_START_FAILED, "Failed to resolve hostname(%s, %d) because ctx is null, neterrno : %d", hostname, port, ff_neterrno());
+            return NULL;
+        }
+        while(!h->interrupt_callback.callback(h->interrupt_callback.opaque)) {
+            error = ff_igetaddrinfo_a_result(s->cbptr, ctx, (char*)node, 1024);
+            if(error != 0) {
+                break;
+            }
+            av_usleep (30000);
+            timelost += 30000;
+            if(timelost >= s->ttmp_dns_parse_timeout) {
+                error = -2;
+                break;
+            }
+        }
+        if(ctx != NULL) {
+            ff_igetaddrinfo_a_free(s->cbptr, ctx);
+            ctx  = NULL;
+        }
+        if(error > 0) {
+            error = getaddrinfo(node, service, &hints, &res);
+            if (error) {
+                av_fatal(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME, "Failed to resolve hostname(%s, %d), error:%s\n", 
+                    hostname, port, gai_strerror(error));
+                return NULL;
+            }
+            if (node) {
+                ff_isave_host_addr(s->cbptr, s->aptr, node, s->user_flag);
+            }
+        } else if(error == -1) {
+            av_fatal(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME, "Failed to resolve hostname(%s, %d)", hostname, port);
+            return NULL;
+        } else if(error == -2) {
+            av_fatal(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME_TIMEOUT, "Failed to resolve hostname(%s, %d) time out.", hostname, port);
+            return NULL;
+        } else {
+            av_fatal(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME, "Failed to resolve hostname(%s, %d): %d", hostname, port, error);
+            return NULL;
+        }
     }
 
     return res;
@@ -685,6 +755,7 @@ static int udp_open(URLContext *h, const char *uri, int flags)
     char hostname[1024], localaddr[1024] = "";
     int port, udp_fd = -1, tmp, bind_ret = -1, dscp = -1;
     UDPContext *s = h->priv_data;
+    ff_inetwork_log_callback(s->cbptr, s->aptr, IsTransOpenStart, s->user_flag);
     int is_output;
     const char *p;
     char buf[256];
@@ -1066,12 +1137,22 @@ static int udp_read(URLContext *h, uint8_t *buf, int size)
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->udp_fd, 0);
-        if (ret < 0)
+        if (ret < 0) {
+            ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketReadErr, ret);
             return ret;
+        }
     }
     ret = recv(s->udp_fd, buf, size, 0);
-
-    return ret < 0 ? ff_neterrno() : ret;
+    int error = ff_neterrno();
+    if (!s->cal_real_speed && ret > 0) {
+        // for udp-based reliable protocols such as quic/kcp..., bytes received here 
+        // are more than that in tcp_read due to quic/kcp headers and retransmission.
+        ff_inetwork_io_read_callback(s->cbptr, s->aptr, IsNetworkIORead, ret);
+    }
+    if (ret < 0) {
+        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketReadErr, error);
+    }
+    return ret < 0 ? error : ret;
 }
 
 static int udp_write(URLContext *h, const uint8_t *buf, int size)
@@ -1110,8 +1191,10 @@ static int udp_write(URLContext *h, const uint8_t *buf, int size)
 #endif
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->udp_fd, 1);
-        if (ret < 0)
+        if (ret < 0) {
+            ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketWriteErr, ret);
             return ret;
+        }
     }
 
     if (!s->is_connected) {
@@ -1120,8 +1203,11 @@ static int udp_write(URLContext *h, const uint8_t *buf, int size)
                       s->dest_addr_len);
     } else
         ret = send(s->udp_fd, buf, size, 0);
-
-    return ret < 0 ? ff_neterrno() : ret;
+    int error = ff_neterrno();
+    if (ret < 0) {
+        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketWriteErr, error);
+    }
+    return ret < 0 ? error : ret;
 }
 
 static int udp_close(URLContext *h)

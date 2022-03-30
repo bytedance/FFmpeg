@@ -34,6 +34,10 @@
 typedef struct HEVCBSFContext {
     uint8_t  length_size;
     int      extradata_parsed;
+    uint8_t  idr_vps_seen;
+    uint8_t  idr_sps_seen;
+    uint8_t  idr_pps_seen;
+    int      last_nalu_type;
 } HEVCBSFContext;
 
 static int hevc_extradata_to_annexb(AVBSFContext *ctx)
@@ -112,6 +116,11 @@ static int hevc_mp4toannexb_init(AVBSFContext *ctx)
         s->extradata_parsed = 1;
     }
 
+	s->idr_pps_seen = 0;
+	s->idr_sps_seen = 0;
+	s->idr_vps_seen = 0;
+	s->last_nalu_type = 0;
+	
     return 0;
 }
 
@@ -146,8 +155,29 @@ static int hevc_mp4toannexb_filter(AVBSFContext *ctx, AVPacket *out)
 
         nalu_type = (bytestream2_peek_byte(&gb) >> 1) & 0x3f;
 
+
+        if(nalu_type == HEVC_NAL_VPS || nalu_type == HEVC_NAL_SPS || nalu_type == HEVC_NAL_PPS){
+            av_log(ctx, AV_LOG_DEBUG, "hevc_mp4toannexb_filter nalu_type %d.\n", nalu_type);
+        }
+
+	//new IDR and no codec config data before
+        if(is_irap > 0 && (s->last_nalu_type != HEVC_NAL_PPS && s->last_nalu_type != HEVC_NAL_SEI_PREFIX
+            && s->last_nalu_type != HEVC_NAL_SEI_SUFFIX)) {
+            s->idr_vps_seen = 0;
+            s->idr_sps_seen = 0;
+            s->idr_pps_seen = 0;
+        }
+
+        if(nalu_type == HEVC_NAL_VPS){
+            s->idr_vps_seen = 1;
+        }else if(nalu_type == HEVC_NAL_SPS){
+            s->idr_sps_seen = 1;
+        }else if(nalu_type == HEVC_NAL_PPS){
+            s->idr_pps_seen = 1; 
+        }
+
         /* prepend extradata to IRAP frames */
-        is_irap       = nalu_type >= 16 && nalu_type <= 23;
+        is_irap       = nalu_type >= 16 && nalu_type <= 23;     // cqd. intra reference access point.
         add_extradata = is_irap && !got_irap;
         extra_size    = add_extradata * ctx->par_out->extradata_size;
         got_irap     |= is_irap;
@@ -160,14 +190,25 @@ static int hevc_mp4toannexb_filter(AVBSFContext *ctx, AVPacket *out)
 
         prev_size = out->size;
 
-        ret = av_grow_packet(out, 4 + nalu_size + extra_size);
+        int isCopyExtraData = 0;
+        if (add_extradata) {
+            if( !s->idr_vps_seen || !s->idr_sps_seen || !s->idr_pps_seen){
+                isCopyExtraData = 1;
+            }
+        }
+        ret = av_grow_packet(out, isCopyExtraData ? 4 + nalu_size + extra_size : 4 + nalu_size);
         if (ret < 0)
             goto fail;
 
-        if (add_extradata)
+        if (isCopyExtraData) {
             memcpy(out->data + prev_size, ctx->par_out->extradata, extra_size);
-        AV_WB32(out->data + prev_size + extra_size, 1);
-        bytestream2_get_buffer(&gb, out->data + prev_size + 4 + extra_size, nalu_size);
+            AV_WB32(out->data + prev_size + extra_size, 1);
+            bytestream2_get_buffer(&gb, out->data + prev_size + 4 + extra_size, nalu_size);
+        } else {
+            AV_WB32(out->data + prev_size, 1);
+            bytestream2_get_buffer(&gb, out->data + prev_size + 4, nalu_size);
+        }
+        s->last_nalu_type = nalu_type;
     }
 
     ret = av_packet_copy_props(out, in);

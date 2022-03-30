@@ -146,6 +146,93 @@ void ff_make_absolute_url(char *buf, int size, const char *base,
     av_strlcat(buf, rel, size);
 }
 
+void ff_make_absolute_url2(char *buf, int size, const char *base,
+                          const char *rel)
+{
+    char *sep = NULL;
+    char *path_query = NULL;
+    char *tmp = NULL;
+    /* Absolute path, relative to the current server */
+    if (base && strstr(base, "://") && rel[0] == '/') {
+        if (base != buf)
+            av_strlcpy(buf, base, size);
+        sep = strstr(buf, "://");
+        if (sep) {
+            /* Take scheme from base url */
+            if (rel[1] == '/') {
+                sep[1] = '\0';
+            } else {
+                /* Take scheme and host from base url */
+                sep += 3;
+                sep = strchr(sep, '/');
+                if (sep)
+                    *sep = '\0';
+            }
+        }
+        av_strlcat(buf, rel, size);
+        return;
+    }
+    /* If rel actually is an absolute url, just copy it */
+    if (!base || strstr(rel, "://") || rel[0] == '/') {
+        if (base) {
+            tmp = strchr(base, '?');
+        }
+        av_strlcpy(buf, rel, size);
+        if (tmp && !strchr(rel, '?')) {
+            av_strlcat(buf, tmp, size);
+        }
+        return;
+    }
+    if (base != buf)
+        av_strlcpy(buf, base, size);
+
+    /* Strip off any query string from base */
+    tmp = strchr(buf, '?');
+    if (tmp) {
+        path_query = av_mallocz(size);
+        av_strlcpy(path_query, tmp, size);
+        *tmp = '\0';
+    }
+
+    /* Is relative path just a new query part? */
+    if (strchr(rel, '?')) {
+        av_strlcat(buf, rel, size);
+        if (path_query) {
+            av_free(path_query);
+        }
+        return;
+    }
+
+    /* Remove the file name from the base url */
+    sep = strrchr(buf, '/');
+    if (sep)
+        sep[1] = '\0';
+    else
+        buf[0] = '\0';
+    while (av_strstart(rel, "../", NULL) && sep) {
+        /* Remove the path delimiter at the end */
+        sep[0] = '\0';
+        sep = strrchr(buf, '/');
+        /* If the next directory name to pop off is "..", break here */
+        if (!strcmp(sep ? &sep[1] : buf, "..")) {
+            /* Readd the slash we just removed */
+            av_strlcat(buf, "/", size);
+            break;
+        }
+        /* Cut off the directory name */
+        if (sep)
+            sep[1] = '\0';
+        else
+            buf[0] = '\0';
+        rel += 3;
+    }
+    av_strlcat(buf, rel, size);
+    if (path_query) {
+        av_strlcat(buf, path_query, size);
+        av_free(path_query);
+    }
+}
+
 AVIODirEntry *ff_alloc_dir_entry(void)
 {
     AVIODirEntry *entry = av_mallocz(sizeof(AVIODirEntry));

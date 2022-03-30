@@ -206,6 +206,20 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
             HEVCFrame *frame = &s->DPB[min_idx];
             AVFrame *dst = out;
             AVFrame *src = frame->frame;
+
+#if CONFIG_VIDEOTOOLBOX
+            if (s->avctx->hwaccel && !strcmp(s->avctx->hwaccel->name, "hevc_videotoolbox"))
+            {
+                //in some video, s->ps.sps->temporal_layer[s->ps.sps->max_sub_layers - 1].num_reorder_pics is 0, then it will try to output frame when decode picture buffer not ready.
+                //then it output a not ready decode frame and remove it's output flag. After this, decoder complete decode and set decode frame to this decode picture buffer.
+                //This make the really decode picture buffer will never return to user. so we need to return to avoid frame buffer's output flag to be removed.
+                if (!src->buf[0] || !src->data[3])
+                {
+                    return 0;
+                }
+                
+            }
+#endif
             const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(src->format);
             int pixel_shift = !!(desc->comp[0].depth > 8);
 
@@ -224,8 +238,8 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
                           (frame->window.top_offset   >> vshift) * dst->linesize[i];
                 dst->data[i] += off;
             }
-            av_log(s->avctx, AV_LOG_DEBUG,
-                   "Output frame with POC %d.\n", frame->poc);
+            //av_log(s->avctx, AV_LOG_DEBUG,
+            //       "Output frame with POC %d.\n", frame->poc);
             return 1;
         }
 

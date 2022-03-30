@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * 
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.	
  */
 
 #ifndef AVFORMAT_AVFORMAT_H
@@ -455,6 +458,11 @@ typedef struct AVFrac {
 
 struct AVCodecTag;
 
+typedef struct AVFragmentInfo {
+    int64_t offset;
+    int64_t timestamp;
+} AVFragmentInfo;
+
 /**
  * This structure contains the data a format has to probe a file.
  */
@@ -506,6 +514,69 @@ typedef struct AVProbeData {
                                         */
 
 #define AVFMT_SEEK_TO_PTS   0x4000000 /**< Seeking is based on PTS */
+
+typedef enum {
+    IsDNSParsed,
+    IsSocketConnected,
+    IsPacketRecved,
+    IsNetworkIORead,
+
+    IsHttpRepuestFinish,
+    IsHttpResponseFinish,
+    IsDNSStart,
+
+    IsHttpOpenStart,
+    IsTransOpenStart,
+    IsSocketCreateSuccess,
+    Is3xxHappen,
+
+    IsTcpFastOpenSuccess= 250,
+    IsSocketOpenErr,
+    IsSocketReadErr,
+    IsSocketWriteErr,
+
+    // WARNING : Do not add key greater than 1000
+    IsCustomKeyStart = 1000,
+}NetWorkStatusLog;
+
+enum ssl_custom_verify_result {
+    ssl_custom_verify_suc = 0,
+    ssl_custom_verify_internal_not_init = 1,
+    ssl_custom_verify_host_null = 2,
+    ssl_custom_verify_ssl_null = 3,
+    ssl_custom_verify_certificate_null = 4,
+    ssl_custom_verify_timeout = 5,//timeout 1200ms
+    ssl_custom_callback_null = -99999,
+    ssl_custom_create_verifyptr_fail = -99998,
+    ssl_custom_create_param_fail = -99997,
+};
+
+typedef enum {
+    IsLoaderType = 0,
+    IsConnectionInfo = 1,
+    IsGetResponseHeaders = 31,
+    IsMDLInfoCallBack = 32,
+    IsHTTPReqCallback = 33,
+    IsSidxInfoCallback = 34
+}NetWorkInfo;
+
+typedef struct PlayerBufferInfo {
+    int64_t audioBufferTime;
+    int64_t videoBufferTime;
+    int64_t audioDecodedBufferTime;
+    int64_t videoDecodedBufferTime;
+    int64_t lastRenderTime;
+    int64_t bufferStartTime;
+} PlayerBufferInfo;
+typedef enum {
+    IsCacheOnlyNotCancelPreload = 1,
+    IsCacheThenNetworkNotCancelPreload = 2,
+}MdlReadSource;
+
+typedef enum {
+    IsRequestStart  = 0,
+    IsRequestFinish = 1,
+}NetworkOpt;
 
 /**
  * @addtogroup lavf_encoding
@@ -720,6 +791,11 @@ typedef struct AVInputFormat {
     int (*read_header)(struct AVFormatContext *);
 
     /**
+     * Used by format which open further nested input.
+     */
+    int (*read_header2)(struct AVFormatContext *, AVDictionary **options);
+
+    /**
      * Read one packet and put it in 'pkt'. pts and flags are also
      * set. 'avformat_new_stream' can be called only if the flag
      * AVFMTCTX_NOHEADER is used and only in the calling thread (not in a
@@ -753,6 +829,20 @@ typedef struct AVInputFormat {
      */
     int64_t (*read_timestamp)(struct AVFormatContext *s, int stream_index,
                               int64_t *pos, int64_t pos_limit);
+
+    /**
+     * Get the timestamp by sample_index.
+     * @return the timestamp or AV_NOPTS_VALUE if an error occurred
+     */
+    int64_t (*read_timestamp2)(struct AVFormatContext *s, int stream_index,
+                              int sample_index);
+
+    /**
+     * Get fragment info.
+     * @return 0 if OK, < 0 on error
+     */
+    int (*read_fragment_info)(struct AVFormatContext *s, int stream_index,
+                              AVFragmentInfo **frag_infos, int *n_frag_infos);
 
     /**
      * Start/resume playing - only meaningful if using a network-based format
@@ -791,6 +881,16 @@ typedef struct AVInputFormat {
      * @see avdevice_capabilities_free() for more details.
      */
     int (*free_device_capabilities)(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps);
+
+    /**
+     * Read demuxer match io internal cache timeStamp
+     */
+    int64_t (*read_cache_timestamp)(struct AVFormatContext *s, int stream_index, int flags);
+
+    /**
+     * close http auto range read
+     */
+    int (*close_auto_range_read)(struct AVFormatContext *s);
 } AVInputFormat;
 /**
  * @}
@@ -1342,7 +1442,10 @@ typedef struct AVFormatContext {
      * Exports (de)muxer private options if they exist.
      */
     const AVClass *av_class;
-
+	/*
+	* Then is log handle add by qinglingzhang
+	*/
+    aptr_t aptr;
     /**
      * The input container format.
      *
@@ -1406,13 +1509,33 @@ typedef struct AVFormatContext {
      */
     AVStream **streams;
 
+#if FF_API_FORMAT_FILENAME
     /**
      * input or output filename
      *
      * - demuxing: set by avformat_open_input()
      * - muxing: may be set by the caller before avformat_write_header()
+     *
+     * @deprecated Use url instead.
      */
+    attribute_deprecated
     char filename[1024];
+#endif
+
+    /**
+     * input or output URL. Unlike the old filename field, this field has no
+     * length restriction.
+     *
+     * - demuxing: set by avformat_open_input(), initialized to an empty
+     *             string if url parameter was NULL in avformat_open_input().
+     * - muxing: may be set by the caller before calling avformat_write_header()
+     *           (or avformat_init_output() if that is called first) to a string
+     *           which is freeable by av_free(). Set to an empty string if it
+     *           was NULL in avformat_init_output().
+     *
+     * Freed by libavformat in avformat_free_context().
+     */
+    char *url;
 
     /**
      * Position of the first frame of the component, in
@@ -1917,6 +2040,18 @@ typedef struct AVFormatContext {
      * - decoding: set by user
      */
     int max_streams;
+
+    /**
+     * start position of moov box
+     * Demuxing: set by avformat
+     */
+    int64_t moov_pos;
+
+    /**
+     * start position of mdat box
+     * Demuxing: set by avformat
+     */
+    int64_t mdat_pos;
 } AVFormatContext;
 
 /**
@@ -2009,6 +2144,14 @@ void av_register_output_format(AVOutputFormat *format);
  */
 int avformat_network_init(void);
 
+void avformat_getaddrinfo_a_init(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free,
+                                 void* getaddrrinfo_save_ip, void* network_log_callback, void* tcp_io_callback, void* network_info_callback);
+
+void avformat_register_dns_parser(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free);
+
+void avformat_set_ff_custom_verify_callback(int (*callback)(void*, void*, const char*, int));
+void avformat_resourceloader_init(void *loader_open, void *loader_read, void *loader_seek, void *loader_close);
+int avformat_check_interrupt(void *cb);
 /**
  * Undo the initialization done by avformat_network_init.
  */
@@ -2323,6 +2466,18 @@ int av_find_best_stream(AVFormatContext *ic,
  * @return 0 if OK, < 0 on error or end of file
  */
 int av_read_frame(AVFormatContext *s, AVPacket *pkt);
+
+/**
+ * Get timestamp by sample index.
+ * @return timestamp if OK, AV_NOPTS_VALUE on error
+ */
+int64_t av_read_timestamp2(AVFormatContext *s, int stream_index, int sample_index);
+
+/**
+ * Get fragment info.
+ * @return 0 if OK, < 0 on error
+ */
+int av_read_fragment_info(struct AVFormatContext *s, int stream_index, AVFragmentInfo **frag_infos, int *n_frag_infos);
 
 /**
  * Seek to the keyframe at timestamp.
@@ -2751,6 +2906,19 @@ int av_find_default_stream_index(AVFormatContext *s);
  */
 int av_index_search_timestamp(AVStream *st, int64_t timestamp, int flags);
 
+/*
+*get key timestamp neighbor in timestamp 
+*
+ * @param st        stream that the timestamp belongs to
+ * @param timestamp timestamp to retrieve the index for
+ * @param flags if AVSEEK_FLAG_BACKWARD then the returned index will correspond
+ *                 to the timestamp which is <= the requested one, if backward
+ *                 is 0, then it will be >=
+ *              if AVSEEK_FLAG_ANY seek to any frame, only keyframes otherwise
+ * @return < 0 if no such timestamp could be found
+*/
+int64_t av_neighbor_key_timestamp(AVStream *st, int64_t timestamp, int flags);
+
 /**
  * Add an index entry into a sorted list. Update the entry if the list
  * already contains it.
@@ -2787,6 +2955,8 @@ void av_url_split(char *proto,         int proto_size,
                   char *path,          int path_size,
                   const char *url);
 
+void av_url_split_hostname(char *hostname, int hostname_size,
+                           int *port_ptr, const char *url);
 
 /**
  * Print detailed information about the input or output format, such as
@@ -3000,6 +3170,21 @@ int avformat_transfer_internal_stream_timing_info(const AVOutputFormat *ofmt,
  * @param st  input stream to extract the timebase from
  */
 AVRational av_stream_get_codec_timebase(const AVStream *st);
+/**
+ * Get the internal ctts data
+ * @param sc    stream context
+ * @param ctts  ctts pointer
+ */
+
+int mov_get_ctts(void* sc, int** ctts, int* dts_shift);
+
+int av_search_index_with_position(AVStream* stream, int64_t position, int flags);
+
+int64_t wrap_timestamp(const AVStream *st, int64_t timestamp);
+
+int64_t av_read_cache_timestamp(AVFormatContext *s, int stream_index, int flags);
+
+int av_close_auto_range_read(AVFormatContext *s);
 
 /**
  * @}

@@ -42,6 +42,23 @@
 
 #include <float.h>
 
+int av_opt_get_dict_val(void *obj, const char *name, int search_flags, AVDictionary **out_val)
+{
+    void *target_obj;
+    AVDictionary *src;
+    const AVOption *o = av_opt_find2(obj, name, NULL, 0, search_flags, &target_obj);
+
+    if (!o || !target_obj)
+        return AVERROR_OPTION_NOT_FOUND;
+    if (o->type != AV_OPT_TYPE_DICT)
+        return AVERROR(EINVAL);
+
+    src = *(AVDictionary **)(((uint8_t *)target_obj) + o->offset);
+    av_dict_copy(out_val, src, 0);
+
+    return 0;
+}
+
 const AVOption *av_opt_next(const void *obj, const AVOption *last)
 {
     const AVClass *class;
@@ -228,6 +245,17 @@ static int set_string(void *obj, const AVOption *o, const char *val, uint8_t **d
 
 static int set_string_number(void *obj, void *target_obj, const AVOption *o, const char *val, void *dst)
 {
+
+    //Fix uint64 to double incorrect during 64bit
+    //uint64 only used in ttplayer handle
+    if (o->type == AV_OPT_TYPE_APTR) {
+        uint64_t value = strtoull(val, NULL, 10);
+        av_log(obj, AV_LOG_TRACE, "val: %s, value : %lx", val, value);
+        *(uint64_t *)dst = value;
+        av_log(obj, AV_LOG_TRACE," dst: %lx", *(uint64_t *)dst);
+        return 0;
+    }
+
     int ret = 0;
     int num, den;
     char c;
@@ -539,6 +567,7 @@ OPT_EVAL_NUMBER(float,  AV_OPT_TYPE_FLOAT,    float)
 OPT_EVAL_NUMBER(double, AV_OPT_TYPE_DOUBLE,   double)
 OPT_EVAL_NUMBER(q,      AV_OPT_TYPE_RATIONAL, AVRational)
 
+#if CONFIG_FILTERS || !CONFIG_LITE
 static int set_number(void *obj, const char *name, double num, int den, int64_t intnum,
                       int search_flags)
 {
@@ -693,6 +722,30 @@ int av_opt_set_channel_layout(void *obj, const char *name, int64_t cl, int searc
     *(int64_t *)(((uint8_t *)target_obj) + o->offset) = cl;
     return 0;
 }
+
+static int get_format(void *obj, const char *name, int search_flags, int *out_fmt,
+                      enum AVOptionType type, const char *desc)
+{
+    void *dst, *target_obj;
+    const AVOption *o = av_opt_find2(obj, name, NULL, 0, search_flags, &target_obj);
+    if (!o || !target_obj)
+        return AVERROR_OPTION_NOT_FOUND;
+    if (o->type != type) {
+        av_log(obj, AV_LOG_ERROR,
+               "The value for option '%s' is not a %s format.\n", desc, name);
+        return AVERROR(EINVAL);
+    }
+
+    dst = ((uint8_t*)target_obj) + o->offset;
+    *out_fmt = *(int *)dst;
+    return 0;
+}
+
+int av_opt_get_sample_fmt(void *obj, const char *name, int search_flags, enum AVSampleFormat *out_fmt)
+{
+    return get_format(obj, name, search_flags, out_fmt, AV_OPT_TYPE_SAMPLE_FMT, "sample");
+}
+#endif
 
 int av_opt_set_dict_val(void *obj, const char *name, const AVDictionary *val,
                         int search_flags)
@@ -884,6 +937,7 @@ int av_opt_get_int(void *obj, const char *name, int search_flags, int64_t *out_v
     return 0;
 }
 
+#if !CONFIG_LITE
 int av_opt_get_double(void *obj, const char *name, int search_flags, double *out_val)
 {
     int64_t intnum = 1;
@@ -946,32 +1000,9 @@ int av_opt_get_video_rate(void *obj, const char *name, int search_flags, AVRatio
     return 0;
 }
 
-static int get_format(void *obj, const char *name, int search_flags, int *out_fmt,
-                      enum AVOptionType type, const char *desc)
-{
-    void *dst, *target_obj;
-    const AVOption *o = av_opt_find2(obj, name, NULL, 0, search_flags, &target_obj);
-    if (!o || !target_obj)
-        return AVERROR_OPTION_NOT_FOUND;
-    if (o->type != type) {
-        av_log(obj, AV_LOG_ERROR,
-               "The value for option '%s' is not a %s format.\n", desc, name);
-        return AVERROR(EINVAL);
-    }
-
-    dst = ((uint8_t*)target_obj) + o->offset;
-    *out_fmt = *(int *)dst;
-    return 0;
-}
-
 int av_opt_get_pixel_fmt(void *obj, const char *name, int search_flags, enum AVPixelFormat *out_fmt)
 {
     return get_format(obj, name, search_flags, out_fmt, AV_OPT_TYPE_PIXEL_FMT, "pixel");
-}
-
-int av_opt_get_sample_fmt(void *obj, const char *name, int search_flags, enum AVSampleFormat *out_fmt)
-{
-    return get_format(obj, name, search_flags, out_fmt, AV_OPT_TYPE_SAMPLE_FMT, "sample");
 }
 
 int av_opt_get_channel_layout(void *obj, const char *name, int search_flags, int64_t *cl)
@@ -988,23 +1019,6 @@ int av_opt_get_channel_layout(void *obj, const char *name, int search_flags, int
 
     dst = ((uint8_t*)target_obj) + o->offset;
     *cl = *(int64_t *)dst;
-    return 0;
-}
-
-int av_opt_get_dict_val(void *obj, const char *name, int search_flags, AVDictionary **out_val)
-{
-    void *target_obj;
-    AVDictionary *src;
-    const AVOption *o = av_opt_find2(obj, name, NULL, 0, search_flags, &target_obj);
-
-    if (!o || !target_obj)
-        return AVERROR_OPTION_NOT_FOUND;
-    if (o->type != AV_OPT_TYPE_DICT)
-        return AVERROR(EINVAL);
-
-    src = *(AVDictionary **)(((uint8_t *)target_obj) + o->offset);
-    av_dict_copy(out_val, src, 0);
-
     return 0;
 }
 
@@ -1287,6 +1301,7 @@ int av_opt_show2(void *obj, void *av_log_obj, int req_flags, int rej_flags)
 
     return 0;
 }
+#endif
 
 void av_opt_set_defaults(void *s)
 {
@@ -1409,6 +1424,7 @@ static int parse_key_value_pair(void *ctx, const char **buf,
     return ret;
 }
 
+#if !CONFIG_LITE
 int av_set_options_string(void *ctx, const char *opts,
                           const char *key_val_sep, const char *pairs_sep)
 {
@@ -1428,6 +1444,7 @@ int av_set_options_string(void *ctx, const char *opts,
 
     return count;
 }
+#endif
 
 #define WHITESPACES " \n\t\r"
 
@@ -1572,7 +1589,7 @@ int av_opt_set_dict2(void *obj, AVDictionary **options, int search_flags)
 
     while ((t = av_dict_get(*options, "", t, AV_DICT_IGNORE_SUFFIX))) {
         ret = av_opt_set(obj, t->key, t->value, search_flags);
-        if (ret == AVERROR_OPTION_NOT_FOUND)
+        if (ret == AVERROR_OPTION_NOT_FOUND || strcmp(t->key, "aptr") == 0 || strcmp(t->key, "cbptr") == 0)//change by xiewei
             ret = av_dict_set(&tmp, t->key, t->value, 0);
         if (ret < 0) {
             av_log(obj, AV_LOG_ERROR, "Error setting option %s to value %s.\n", t->key, t->value);
@@ -1756,6 +1773,7 @@ int av_opt_copy(void *dst, const void *src)
     return ret;
 }
 
+#if !CONFIG_LITE
 int av_opt_query_ranges(AVOptionRanges **ranges_arg, void *obj, const char *key, int flags)
 {
     int ret;
@@ -2023,3 +2041,4 @@ int av_opt_serialize(void *obj, int opt_flags, int flags, char **buffer,
     av_bprint_finalize(&bprint, buffer);
     return 0;
 }
+#endif

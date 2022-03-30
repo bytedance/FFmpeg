@@ -121,20 +121,23 @@ static int h264_find_frame_end(H264ParseContext *p, const uint8_t *buf,
             }
             state = 7;
         } else {
+            unsigned int mb, last_mb = p->parse_last_mb;
+            GetBitContext gb;
             p->parse_history[p->parse_history_count++] = buf[i];
-            if (p->parse_history_count > 5) {
-                unsigned int mb, last_mb = p->parse_last_mb;
-                GetBitContext gb;
 
-                init_get_bits(&gb, p->parse_history, 8*p->parse_history_count);
-                p->parse_history_count = 0;
-                mb= get_ue_golomb_long(&gb);
+            init_get_bits(&gb, p->parse_history, 8*p->parse_history_count);
+            mb= get_ue_golomb_long(&gb);
+            if (get_bits_left(&gb) > 0 || p->parse_history_count > 5) {
                 p->parse_last_mb = mb;
                 if (pc->frame_start_found) {
-                    if (mb <= last_mb)
+                    if (mb <= last_mb) {
+                        i -= p->parse_history_count - 1;
+                        p->parse_history_count = 0;
                         goto found;
+                    }
                 } else
                     pc->frame_start_found = 1;
+                p->parse_history_count = 0;
                 state = 7;
             }
         }
@@ -149,7 +152,7 @@ found:
     pc->frame_start_found = 0;
     if (p->is_avc)
         return next_avc;
-    return i - (state & 5) - 5 * (state > 7);
+    return i - (state & 5);
 }
 
 static int scan_mmco_reset(AVCodecParserContext *s, GetBitContext *gb,
@@ -202,7 +205,7 @@ static int scan_mmco_reset(AVCodecParserContext *s, GetBitContext *gb,
     if ((p->ps.pps->weighted_pred && slice_type_nos == AV_PICTURE_TYPE_P) ||
         (p->ps.pps->weighted_bipred_idc == 1 && slice_type_nos == AV_PICTURE_TYPE_B))
         ff_h264_pred_weight_table(gb, p->ps.sps, ref_count, slice_type_nos,
-                                  &pwt, logctx);
+                                  &pwt, p->picture_structure, logctx);
 
     if (get_bits1(gb)) { // adaptive_ref_pic_marking_mode_flag
         int i;
@@ -251,6 +254,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     int q264 = buf_size >=4 && !memcmp("Q264", buf, 4);
     int field_poc[2];
     int ret;
+    int paddingAlloc = 0;
 
     /* set some sane default values */
     s->pict_type         = AV_PICTURE_TYPE_I;
@@ -306,13 +310,30 @@ static inline int parse_nal_units(AVCodecParserContext *s,
 
         buf_index += consumed;
 
+init_ctx:
         ret = init_get_bits8(&nal.gb, nal.data, nal.size);
         if (ret < 0)
             goto fail;
         get_bits1(&nal.gb);
         nal.ref_idc = get_bits(&nal.gb, 2);
         nal.type    = get_bits(&nal.gb, 5);
-
+        if ((nal.type == H264_NAL_SPS || nal.type == H264_NAL_PPS) && !paddingAlloc &&
+            (buf_size - buf_index) < AV_INPUT_BUFFER_PADDING_SIZE) {
+            av_log(NULL, AV_LOG_DEBUG, " nal.type: %d, nal.size: %d, idx: %d, buffer size: %d \n", nal.type, nal.size, buf_index, buf_size);
+            //handle sequence header as same as extradata
+            av_fast_padded_malloc(&(nal.rbsp_buffer), &nal.rbsp_buffer_size, nal.size);
+            if (!nal.rbsp_buffer) {
+                //return AVERROR(ENOMEM);
+                goto fail;
+            }
+            memcpy(nal.rbsp_buffer, nal.data, nal.size);
+            av_log(NULL, AV_LOG_DEBUG,"realloc size: %d", nal.rbsp_buffer_size);
+            memset(nal.rbsp_buffer + nal.size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+            nal.data = nal.rbsp_buffer;
+            paddingAlloc = 1;
+            goto init_ctx;
+        }
+        paddingAlloc = 0;
         switch (nal.type) {
         case H264_NAL_SPS:
             ff_h264_decode_seq_parameter_set(&nal.gb, avctx, &p->ps, 0);
@@ -553,7 +574,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
         return 0;
     }
     /* didn't find a picture! */
-    av_log(avctx, AV_LOG_ERROR, "missing picture in access unit with size %d\n", buf_size);
+    //av_log(avctx, AV_LOG_ERROR, "missing picture in access unit with size %d\n", buf_size);
 fail:
     av_freep(&nal.rbsp_buffer);
     return -1;

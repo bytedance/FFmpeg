@@ -301,7 +301,12 @@ char av_get_picture_type_char(enum AVPictureType pict_type);
 #include "mathematics.h"
 #include "log.h"
 #include "pixfmt.h"
-
+typedef int64_t (*getfreedisksapce)(const char* path);
+typedef struct get_util_ctx {
+    getfreedisksapce get_free_sapce;
+} get_util_ctx;
+void ff_getutilctx_a_init(void* getfreespace);
+int64_t ff_getfreedisksapce(const char* path);
 /**
  * Return x default pointer in case p is NULL.
  */

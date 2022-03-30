@@ -38,6 +38,8 @@ extern const URLProtocol ff_hls_protocol;
 extern const URLProtocol ff_http_protocol;
 extern const URLProtocol ff_httpproxy_protocol;
 extern const URLProtocol ff_https_protocol;
+extern const URLProtocol ff_httpk_protocol;
+extern const URLProtocol ff_httpq_protocol;
 extern const URLProtocol ff_icecast_protocol;
 extern const URLProtocol ff_mmsh_protocol;
 extern const URLProtocol ff_mmst_protocol;
@@ -50,6 +52,8 @@ extern const URLProtocol ff_rtmps_protocol;
 extern const URLProtocol ff_rtmpt_protocol;
 extern const URLProtocol ff_rtmpte_protocol;
 extern const URLProtocol ff_rtmpts_protocol;
+extern const URLProtocol ff_rtmpk_protocol;
+extern const URLProtocol ff_rtmpq_protocol;
 extern const URLProtocol ff_rtp_protocol;
 extern const URLProtocol ff_sctp_protocol;
 extern const URLProtocol ff_srtp_protocol;
@@ -61,6 +65,8 @@ extern const URLProtocol ff_tls_schannel_protocol;
 extern const URLProtocol ff_tls_securetransport_protocol;
 extern const URLProtocol ff_tls_openssl_protocol;
 extern const URLProtocol ff_udp_protocol;
+extern const URLProtocol ff_quic_protocol;
+extern const URLProtocol ff_rearquic_protocol;
 extern const URLProtocol ff_udplite_protocol;
 extern const URLProtocol ff_unix_protocol;
 extern const URLProtocol ff_librtmp_protocol;
@@ -70,6 +76,12 @@ extern const URLProtocol ff_librtmpt_protocol;
 extern const URLProtocol ff_librtmpte_protocol;
 extern const URLProtocol ff_libssh_protocol;
 extern const URLProtocol ff_libsmbclient_protocol;
+extern const URLProtocol ff_mediadatasource_protocol;
+extern const URLProtocol ff_mem_protocol;
+extern const URLProtocol ff_mdl_protocol;
+extern const URLProtocol ff_live_protocol;
+extern const URLProtocol ff_httpx_protocol;
+extern const URLProtocol ff_thirdparty_protocol;
 
 #include "libavformat/protocol_list.c"
 
@@ -129,5 +141,22 @@ const URLProtocol **ffurl_get_protocols(const char *whitelist,
         ret[ret_idx++] = up;
     }
 
+    return ret;
+}
+
+int sandbox_check_url(const char *url, const char *param, const char *header) {
+    int ret = SANDBOX_CHECK_URL_PROCEED;
+    typedef int (*Sender)(const char*, const char*, const char*);
+    Sender proceed = NULL;
+
+    char* sandboxbuf = getenv("orbuculumIsProceedRequest");
+    if (sandboxbuf) {
+        size_t address = strtoull(sandboxbuf, NULL, 16);
+        if (address != 0) {
+            proceed = (Sender) address;
+        }
+    }
+
+    ret = proceed == NULL ? SANDBOX_CHECK_URL_PROCEED : proceed(url, param, header);
     return ret;
 }

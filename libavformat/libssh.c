@@ -269,6 +269,10 @@ static int64_t libssh_seek(URLContext *h, int64_t pos, int whence)
     case SEEK_END:
         newpos = libssh->filesize + pos;
         break;
+    case AVSEEK_SETDUR
+    case AVSEEK_ADDR:
+    case AVSEEK_CPSIZE:
+	    return -1;
     default:
         return AVERROR(EINVAL);
     }

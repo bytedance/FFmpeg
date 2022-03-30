@@ -30,6 +30,19 @@
 #include "libavutil/ffversion.h"
 const char av_util_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
 
+static get_util_ctx gGetUtilCtx_a = {
+    .get_free_sapce = NULL,
+};
+void ff_getutilctx_a_init(void* getfreespace) {
+    gGetUtilCtx_a.get_free_sapce = getfreespace;
+}
+int64_t ff_getfreedisksapce(const char* path) {
+    if (gGetUtilCtx_a.get_free_sapce == NULL) {
+        return -1;
+    }
+    return gGetUtilCtx_a.get_free_sapce(path);
+}
+
 const char *av_version_info(void)
 {
     return FFMPEG_VERSION;

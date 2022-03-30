@@ -31,6 +31,7 @@
 #include "intreadwrite.h"
 #include "version.h"
 
+#if CONFIG_FILTERS || !CONFIG_LITE
 void av_read_image_line(uint16_t *dst,
                         const uint8_t *data[4], const int linesize[4],
                         const AVPixFmtDescriptor *desc,
@@ -126,6 +127,7 @@ void av_write_image_line(const uint16_t *src,
         }
     }
 }
+#endif
 
 #if FF_API_PLUS1_MINUS1
 FF_DISABLE_DEPRECATION_WARNINGS
@@ -143,6 +145,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         },
         .flags = AV_PIX_FMT_FLAG_PLANAR,
     },
+// #if !CONFIG_LITE
     [AV_PIX_FMT_YUYV422] = {
         .name = "yuyv422",
         .nb_components = 3,
@@ -2158,11 +2161,13 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .flags = AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_PLANAR |
                  AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
     },
+// #endif
 };
 #if FF_API_PLUS1_MINUS1
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
+#if !CONFIG_LITE
 static const char *color_range_names[] = {
     [AVCOL_RANGE_UNSPECIFIED] = "unknown",
     [AVCOL_RANGE_MPEG] = "tv",
@@ -2232,6 +2237,7 @@ static const char *chroma_location_names[] = {
     [AVCHROMA_LOC_BOTTOMLEFT] = "bottomleft",
     [AVCHROMA_LOC_BOTTOM] = "bottom",
 };
+#endif
 
 static enum AVPixelFormat get_pix_fmt_internal(const char *name)
 {
@@ -2385,6 +2391,7 @@ int av_pix_fmt_count_planes(enum AVPixelFormat pix_fmt)
     return ret;
 }
 
+#if !CONFIG_LITE
 void ff_check_pixfmt_descriptors(void){
     int i, j;
 
@@ -2425,7 +2432,7 @@ void ff_check_pixfmt_descriptors(void){
         }
     }
 }
-
+#endif
 
 enum AVPixelFormat av_pix_fmt_swap_endianness(enum AVPixelFormat pix_fmt)
 {
@@ -2643,6 +2650,7 @@ enum AVPixelFormat av_find_best_pix_fmt_of_2(enum AVPixelFormat dst_pix_fmt1, en
     return dst_pix_fmt;
 }
 
+#if !CONFIG_LITE
 const char *av_color_range_name(enum AVColorRange range)
 {
     return (unsigned) range < AVCOL_RANGE_NB ?
@@ -2672,3 +2680,30 @@ const char *av_chroma_location_name(enum AVChromaLocation location)
     return (unsigned) location < AVCHROMA_LOC_NB ?
         chroma_location_names[location] : NULL;
 }
+#else
+const char *av_color_range_name(enum AVColorRange range)
+{
+    return NULL;
+}
+
+const char *av_color_primaries_name(enum AVColorPrimaries primaries)
+{
+    return NULL;
+}
+
+const char *av_color_transfer_name(enum AVColorTransferCharacteristic transfer)
+{
+    return NULL;
+}
+
+const char *av_color_space_name(enum AVColorSpace space)
+{
+    return NULL;
+}
+
+const char *av_chroma_location_name(enum AVChromaLocation location)
+{
+    return NULL;
+}
+
+#endif

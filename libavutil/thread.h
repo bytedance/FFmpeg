@@ -105,7 +105,9 @@ static inline int strict_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t
 {
     ASSERT_PTHREAD(pthread_cond_wait, cond, mutex);
 }
-
+static inline int strict_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,const struct timespace* abstime){     
+    ASSERT_PTHREAD(pthread_cond_timedwait, cond, mutex,abstime);
+}
 static inline int strict_pthread_once(pthread_once_t *once_control, void (*init_routine)(void))
 {
     ASSERT_PTHREAD(pthread_once, once_control, init_routine);
@@ -121,6 +123,7 @@ static inline int strict_pthread_once(pthread_once_t *once_control, void (*init_
 #define pthread_cond_signal    strict_pthread_cond_signal
 #define pthread_cond_broadcast strict_pthread_cond_broadcast
 #define pthread_cond_wait      strict_pthread_cond_wait
+#define pthread_cond_timedwait strict_pthread_cond_timedwait
 #define pthread_once           strict_pthread_once
 #endif
 

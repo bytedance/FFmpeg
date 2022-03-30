@@ -16,6 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #ifndef AVUTIL_LOG_H
@@ -140,7 +143,27 @@ typedef struct AVClass {
      * available since version (52.12)
      */
     int (*query_ranges)(struct AVOptionRanges **, void *obj, const char *key, int flags);
+
+    aptr_t (*get_aptr)(void* ctx);
 } AVClass;
+
+struct LOGWRAPPER;
+typedef struct LOGWRAPPER LogWrapper;
+typedef void (*fatal_callback)(LogWrapper* wrapper,int type, int code, const char* logInfo);
+typedef void (*fatal_log_callback)(void* ptr,int type, int code, const char* logInfo);
+typedef void (*log_callback)(void* ptr, int level, const char* fmt, va_list vl);
+typedef void  (*ReleaseLogWrapper)(LogWrapper* appWrapper);
+typedef intptr_t (*GetLogPtr)(LogWrapper* wrapper,int key);
+typedef struct LOGWRAPPER{
+    void *mApp;
+    GetLogPtr getAppValue;
+    ReleaseLogWrapper releaseAppWrapper;
+    fatal_callback fatal_info_callback; //use for player internal
+    fatal_log_callback log_fatal_callback;
+    int logLevel;
+    uint64_t handle;
+    log_callback log_callback;
+}LogWrapper;
 
 /**
  * @addtogroup lavu_log
@@ -231,7 +254,31 @@ typedef struct AVClass {
  * @param fmt The format string (printf-compatible) that specifies how
  *        subsequent arguments are converted to output.
  */
-void av_log(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
+
+
+void av_logx(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
+void av_ll(void *avcl, int level, const char* file_name, const char* function_name, int line_num, const char *fmt, ...);
+
+
+/*
+*log error form ffmpeg to extern line and file name and number
+*
+*/
+enum AV_LOG_INFO_TYPE{
+    AV_INFO_ERROR = AV_LOG_TRACE + 100,
+    AV_INFO_HTTP_HEADER,
+    AV_INFO_ERROR_CODE_PAIR,
+};
+#define __FILENAME__ (strrchr(__FILE__,'/')?strrchr(__FILE__,'/')+1:__FILE__)
+#define av_log(avcl, level, ...) av_ll(avcl, level, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
+
+#define av_trace(avcl,code,...) av_log_fatal(avcl,AV_LOG_TRACE, code, __FILENAME__, __FUNCTION__, __LINE__,__VA_ARGS__)
+#define av_fatal(avcl,code,...) av_log_fatal(avcl,AV_LOG_FATAL, code, __FILENAME__, __FUNCTION__, __LINE__,__VA_ARGS__)
+
+void av_log_fatal(void *avcl, int level, int code, const char* filename, const char* function, int line, const char *fmt, ...);
+
+void av_fatal_set_callback(void(*callback)(void*, int, int, const char*));
+
 
 
 /**

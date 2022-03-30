@@ -173,7 +173,8 @@ static void mp3_parse_info_tag(AVFormatContext *s, AVStream *st,
         uint64_t min, delta;
         min = FFMIN(fsize, mp3->header_filesize);
         delta = FFMAX(fsize, mp3->header_filesize) - min;
-        if (fsize > mp3->header_filesize && delta > min >> 4) {
+        /* when fsize > INT64_MAX, it might be wrong value, don't drop mp3->frames*/
+        if (fsize > mp3->header_filesize && delta > min >> 4 && fsize < INT64_MAX) {
             mp3->frames = 0;
             av_log(s, AV_LOG_WARNING,
                    "invalid concatenated file detected - using bitrate for duration\n");

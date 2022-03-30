@@ -65,9 +65,13 @@ AVCodecParserContext *av_parser_init(int codec_id)
             parser->codec_ids[4] == codec_id)
             goto found;
     }
+    av_log(NULL, AV_LOG_ERROR, "parser not found for codec %d\n", codec_id);
+
     return NULL;
 
 found:
+    av_log(NULL, AV_LOG_INFO, "parser found for codec %d, %p\n", codec_id, parser);
+
     s = av_mallocz(sizeof(AVCodecParserContext));
     if (!s)
         goto err_out;

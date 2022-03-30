@@ -9,8 +9,10 @@ HEADERS = avcodec.h                                                     \
           dirac.h                                                       \
           dv_profile.h                                                  \
           dxva2.h                                                       \
+          golomb.h                                                      \
           jni.h                                                         \
           mediacodec.h                                                  \
+          put_bits.h                                                    \
           qsv.h                                                         \
           vaapi.h                                                       \
           vda.h                                                         \
@@ -19,36 +21,46 @@ HEADERS = avcodec.h                                                     \
           videotoolbox.h                                                \
           vorbis_parser.h                                               \
           xvmc.h                                                        \
+          bytestream.h                                                  \
+          internal.h                                                    \
+          vlc.h                                                         \
+          thread.h                                                      \
+          mathops.h                                                     \
+          get_bits.h                                                    \
+          vda_vt_internal.h                                             \
+          parser.h                                                      \
+          bsf.h                                                         \
 
 OBJS = allcodecs.o                                                      \
-       audioconvert.o                                                   \
-       avdct.o                                                          \
        avpacket.o                                                       \
-       avpicture.o                                                      \
        bitstream.o                                                      \
        bitstream_filter.o                                               \
        bitstream_filters.o                                              \
        bsf.o                                                            \
        codec_desc.o                                                     \
-       d3d11va.o                                                        \
-       dirac.o                                                          \
-       dv_profile.o                                                     \
-       imgconvert.o                                                     \
-       jni.o                                                            \
        mathtables.o                                                     \
-       mediacodec.o                                                     \
-       mpeg12framerate.o                                                \
        options.o                                                        \
-       mjpegenc_huffman.o                                               \
        parser.o                                                         \
-       profiles.o                                                       \
-       qsv_api.o                                                        \
        raw.o                                                            \
-       resample.o                                                       \
-       resample2.o                                                      \
        utils.o                                                          \
-       vorbis_parser.o                                                  \
-       xiph.o                                                           \
+
+OBJS-$(!CONFIG_LITE) += audioconvert.o                                                   \
+                        avdct.o                                                          \
+                        avpicture.o                                                      \
+                        d3d11va.o                                                        \
+                        dirac.o                                                          \
+                        dv_profile.o                                                     \
+                        imgconvert.o                                                     \
+                        jni.o                                                            \
+                        mediacodec.o                                                     \
+                        mpeg12framerate.o                                                \
+                        mjpegenc_huffman.o                                               \
+                        profiles.o                                                       \
+                        qsv_api.o                                                        \
+                        resample.o                                                       \
+                        resample2.o                                                      \
+                        vorbis_parser.o                                                  \
+                        xiph.o                                                           \
 
 # subsystems
 OBJS-$(CONFIG_AANDCTTABLES)            += aandcttab.o
@@ -803,6 +815,7 @@ OBJS-$(CONFIG_HEVC_D3D11VA_HWACCEL)       += dxva2_hevc.o
 OBJS-$(CONFIG_HEVC_DXVA2_HWACCEL)         += dxva2_hevc.o
 OBJS-$(CONFIG_HEVC_VAAPI_HWACCEL)         += vaapi_hevc.o
 OBJS-$(CONFIG_HEVC_VDPAU_HWACCEL)         += vdpau_hevc.o
+OBJS-$(CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL)  += videotoolbox.o
 OBJS-$(CONFIG_MPEG1_VDPAU_HWACCEL)        += vdpau_mpeg12.o
 OBJS-$(CONFIG_MPEG1_VIDEOTOOLBOX_HWACCEL) += videotoolbox.o
 OBJS-$(CONFIG_MPEG1_XVMC_HWACCEL)         += mpegvideo_xvmc.o
