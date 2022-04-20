@@ -2412,11 +2412,104 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[] = {
         },
         .flags = AV_PIX_FMT_FLAG_PLANAR,
     },
+    [AV_PIX_FMT_RGB24] = {
+        .name = "rgb24",
+        .nb_components = 3,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 3, 0, 0, 8, 2, 7, 1 },        /* R */
+            { 0, 3, 1, 0, 8, 2, 7, 2 },        /* G */
+            { 0, 3, 2, 0, 8, 2, 7, 3 },        /* B */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB,
+    },
+    [AV_PIX_FMT_BGR24] = {
+        .name = "bgr24",
+        .nb_components = 3,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 3, 2, 0, 8, 2, 7, 3 },        /* R */
+            { 0, 3, 1, 0, 8, 2, 7, 2 },        /* G */
+            { 0, 3, 0, 0, 8, 2, 7, 1 },        /* B */
+        },
+        .flags = AV_PIX_FMT_FLAG_RGB,
+    },
+    [AV_PIX_FMT_YUV422P] = {
+        .name = "yuv422p",
+        .nb_components = 3,
+        .log2_chroma_w = 1,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
+            { 2, 1, 0, 0, 8, 0, 7, 1 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+    [AV_PIX_FMT_YUV444P] = {
+        .name = "yuv444p",
+        .nb_components = 3,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
+            { 2, 1, 0, 0, 8, 0, 7, 1 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+    [AV_PIX_FMT_GRAY8] = {
+        .name = "gray",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+        },
+        .flags = FF_PSEUDOPAL,
+        .alias = "gray8,y8",
+    },
+    [AV_PIX_FMT_PAL8] = {
+        .name = "pal8",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },
+        },
+        .flags = AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_ALPHA,
+    },
     [AV_PIX_FMT_YUVJ420P] = {
         .name = "yuvj420p",
         .nb_components = 3,
         .log2_chroma_w = 1,
         .log2_chroma_h = 1,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
+            { 2, 1, 0, 0, 8, 0, 7, 1 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+    [AV_PIX_FMT_YUVJ422P] = {
+        .name = "yuvj422p",
+        .nb_components = 3,
+        .log2_chroma_w = 1,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
+            { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
+            { 2, 1, 0, 0, 8, 0, 7, 1 },        /* V */
+        },
+        .flags = AV_PIX_FMT_FLAG_PLANAR,
+    },
+    [AV_PIX_FMT_YUVJ444P] = {
+        .name = "yuvj444p",
+        .nb_components = 3,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
         .comp = {
             { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
             { 1, 1, 0, 0, 8, 0, 7, 1 },        /* U */
