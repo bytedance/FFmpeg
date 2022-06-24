@@ -455,6 +455,20 @@ static av_cold int gif_decode_init(AVCodecContext *avctx)
     s->avctx = avctx;
 
     avctx->pix_fmt = AV_PIX_FMT_RGB32;
+
+    int8_t flag = 0;
+    const AVPixFmtDescriptor *pix_desc = NULL;
+    while ((pix_desc = av_pix_fmt_desc_next(pix_desc))) {
+        if (s->avctx->pix_fmt == av_pix_fmt_desc_get_id(pix_desc)) {
+            flag = 1;
+            break;
+        }
+    }
+    if (!flag) {
+        av_log(s->avctx, AV_LOG_ERROR, "Could not get a pixel format descriptor.\n");
+        return AVERROR_BUG;
+    }
+
     s->frame = av_frame_alloc();
     if (!s->frame)
         return AVERROR(ENOMEM);
