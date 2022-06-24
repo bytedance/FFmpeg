@@ -694,6 +694,19 @@ static int decode_idat_chunk(AVCodecContext *avctx, PNGDecContext *s,
             return AVERROR_PATCHWELCOME;
         }
 
+        int8_t flag = 0;
+        const AVPixFmtDescriptor *pix_desc = NULL;
+        while ((pix_desc = av_pix_fmt_desc_next(pix_desc))) {
+            if (s->avctx->pix_fmt == av_pix_fmt_desc_get_id(pix_desc)) {
+                flag = 1;
+                break;
+            }
+        }
+        if (!flag) {
+            av_log(s->avctx, AV_LOG_ERROR, "Could not get a pixel format descriptor.\n");
+            return AVERROR_BUG;
+        }
+
         if (s->has_trns && s->color_type != PNG_COLOR_TYPE_PALETTE) {
             switch (avctx->pix_fmt) {
             case AV_PIX_FMT_RGB24:

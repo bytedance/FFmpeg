@@ -688,8 +688,16 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
                 s->avctx->pix_fmt = AV_PIX_FMT_GRAY16;
         }
 
-        s->pix_desc = av_pix_fmt_desc_get(s->avctx->pix_fmt);
-        if (!s->pix_desc) {
+        // support pix fmt flag
+        int8_t flag = 0;
+        const AVPixFmtDescriptor *pix_desc = NULL;
+        while ((pix_desc = av_pix_fmt_desc_next(pix_desc))) {
+            if (s->avctx->pix_fmt == av_pix_fmt_desc_get_id(pix_desc)) {
+                flag = 1;
+                break;
+            }
+        }
+        if (!flag) {
             av_log(s->avctx, AV_LOG_ERROR, "Could not get a pixel format descriptor.\n");
             return AVERROR_BUG;
         }
