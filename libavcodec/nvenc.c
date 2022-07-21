@@ -35,6 +35,9 @@
 #include "encode.h"
 #include "internal.h"
 #include "packet_internal.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(avctx, dl_fn->cuda_dl, x)
 
@@ -2095,10 +2098,11 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
     int needs_encode_config = 0;
     int reconfig_bitrate = 0, reconfig_dar = 0;
     int dw, dh;
+    NVENCSTATUS nv_status = NV_ENC_SUCCESS;
+    NV_ENC_PRESET_CONFIG preset_config = { 0 };
 
     params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
     params.reInitEncodeParams = ctx->init_encode_params;
-
     compute_dar(avctx, &dw, &dh);
     if (dw != ctx->init_encode_params.darWidth || dh != ctx->init_encode_params.darHeight) {
         av_log(avctx, AV_LOG_VERBOSE,
@@ -2112,13 +2116,12 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
         needs_reconfig = 1;
         reconfig_dar = 1;
     }
-
     if (ctx->rc != NV_ENC_PARAMS_RC_CONSTQP && ctx->support_dyn_bitrate) {
         if (avctx->bit_rate > 0 && params.reInitEncodeParams.encodeConfig->rcParams.averageBitRate != avctx->bit_rate) {
             av_log(avctx, AV_LOG_VERBOSE,
-                   "avg bitrate change: %d -> %d\n",
-                   params.reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
-                   (uint32_t)avctx->bit_rate);
+                    "avg bitrate change: %d -> %d\n",
+                    params.reInitEncodeParams.encodeConfig->rcParams.averageBitRate,
+                    (uint32_t)avctx->bit_rate);
 
             params.reInitEncodeParams.encodeConfig->rcParams.averageBitRate = avctx->bit_rate;
             reconfig_bitrate = 1;
@@ -2126,9 +2129,9 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
 
         if (avctx->rc_max_rate > 0 && ctx->encode_config.rcParams.maxBitRate != avctx->rc_max_rate) {
             av_log(avctx, AV_LOG_VERBOSE,
-                   "max bitrate change: %d -> %d\n",
-                   params.reInitEncodeParams.encodeConfig->rcParams.maxBitRate,
-                   (uint32_t)avctx->rc_max_rate);
+                    "max bitrate change: %d -> %d\n",
+                    params.reInitEncodeParams.encodeConfig->rcParams.maxBitRate,
+                    (uint32_t)avctx->rc_max_rate);
 
             params.reInitEncodeParams.encodeConfig->rcParams.maxBitRate = avctx->rc_max_rate;
             reconfig_bitrate = 1;
@@ -2136,9 +2139,9 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
 
         if (avctx->rc_buffer_size > 0 && ctx->encode_config.rcParams.vbvBufferSize != avctx->rc_buffer_size) {
             av_log(avctx, AV_LOG_VERBOSE,
-                   "vbv buffer size change: %d -> %d\n",
-                   params.reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,
-                   avctx->rc_buffer_size);
+                    "vbv buffer size change: %d -> %d\n",
+                    params.reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize,
+                    avctx->rc_buffer_size);
 
             params.reInitEncodeParams.encodeConfig->rcParams.vbvBufferSize = avctx->rc_buffer_size;
             reconfig_bitrate = 1;
@@ -2152,6 +2155,110 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
             needs_reconfig = 1;
         }
     }
+    GUID last_guid = ctx->init_encode_params.presetGUID;
+    nvenc_map_preset(ctx);
+    preset_config.version = NV_ENC_PRESET_CONFIG_VER;
+    preset_config.presetCfg.version = NV_ENC_CONFIG_VER;
+#ifdef NVENC_HAVE_NEW_PRESETS
+    nv_status = p_nvenc->nvEncGetEncodePresetConfigEx(ctx->nvencoder,
+        ctx->init_encode_params.encodeGUID,
+        ctx->init_encode_params.presetGUID,
+        ctx->init_encode_params.tuningInfo,
+        &preset_config);
+#else
+    nv_status = p_nvenc->nvEncGetEncodePresetConfig(ctx->nvencoder,
+        ctx->init_encode_params.encodeGUID,
+        ctx->init_encode_params.presetGUID,
+        &preset_config);
+#endif
+    if (nv_status != NV_ENC_SUCCESS) {
+        av_log(avctx, AV_LOG_VERBOSE, "get preset config err");
+    } else {
+        memcpy(&ctx->encode_config, &preset_config.presetCfg, sizeof(ctx->encode_config));
+        ctx->encode_config.version = NV_ENC_CONFIG_VER;
+        int res;
+
+        if (avctx->framerate.num > 0 && avctx->framerate.den > 0) {
+            ctx->init_encode_params.frameRateNum = avctx->framerate.num;
+            ctx->init_encode_params.frameRateDen = avctx->framerate.den;
+        } else {
+            ctx->init_encode_params.frameRateNum = avctx->time_base.den;
+            ctx->init_encode_params.frameRateDen = avctx->time_base.num * avctx->ticks_per_frame;
+        }
+
+        ctx->init_encode_params.enableEncodeAsync = 0;
+        ctx->init_encode_params.enablePTD = 1;
+
+    #ifdef NVENC_HAVE_NEW_PRESETS
+        /* If lookahead isn't set from CLI, use value from preset.
+        * P6 & P7 presets may enable lookahead for better quality.
+        * */
+        if (ctx->rc_lookahead == 0 && ctx->encode_config.rcParams.enableLookahead)
+            ctx->rc_lookahead = ctx->encode_config.rcParams.lookaheadDepth;
+    #endif
+
+        if (ctx->weighted_pred == 1)
+            ctx->init_encode_params.enableWeightedPrediction = 1;
+
+        if (ctx->bluray_compat) {
+            ctx->aud = 1;
+            ctx->dpb_size = FFMIN(FFMAX(avctx->refs, 0), 6);
+            avctx->max_b_frames = FFMIN(avctx->max_b_frames, 3);
+            switch (avctx->codec->id) {
+            case AV_CODEC_ID_H264:
+                /* maximum level depends on used resolution */
+                break;
+            case AV_CODEC_ID_HEVC:
+                ctx->level = NV_ENC_LEVEL_HEVC_51;
+                ctx->tier = NV_ENC_TIER_HEVC_HIGH;
+                break;
+            }
+        }
+
+        if (avctx->gop_size > 0) {
+            if (avctx->max_b_frames >= 0) {
+                /* 0 is intra-only, 1 is I/P only, 2 is one B-Frame, 3 two B-frames, and so on. */
+                ctx->encode_config.frameIntervalP = avctx->max_b_frames + 1;
+            }
+
+            ctx->encode_config.gopLength = avctx->gop_size;
+        } else if (avctx->gop_size == 0) {
+            ctx->encode_config.frameIntervalP = 0;
+            ctx->encode_config.gopLength = 1;
+        }
+
+        nvenc_recalc_surfaces(avctx);
+
+        nvenc_setup_rate_control(avctx);
+
+        if (avctx->flags & AV_CODEC_FLAG_INTERLACED_DCT) {
+            ctx->encode_config.frameFieldMode = NV_ENC_PARAMS_FRAME_FIELD_MODE_FIELD;
+        } else {
+            ctx->encode_config.frameFieldMode = NV_ENC_PARAMS_FRAME_FIELD_MODE_FRAME;
+        }
+
+        nvenc_setup_codec_config(avctx);
+    }
+
+    params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
+    params.reInitEncodeParams = ctx->init_encode_params;
+    
+    if (last_guid.Data1 != ctx->init_encode_params.presetGUID.Data1
+    || last_guid.Data2 != ctx->init_encode_params.presetGUID.Data2
+    || last_guid.Data3 != ctx->init_encode_params.presetGUID.Data3
+    || last_guid.Data4[0] != ctx->init_encode_params.presetGUID.Data4[0]
+    || last_guid.Data4[1] != ctx->init_encode_params.presetGUID.Data4[1]
+    || last_guid.Data4[2] != ctx->init_encode_params.presetGUID.Data4[2]
+    || last_guid.Data4[3] != ctx->init_encode_params.presetGUID.Data4[3]
+    || last_guid.Data4[4] != ctx->init_encode_params.presetGUID.Data4[4]
+    || last_guid.Data4[5] != ctx->init_encode_params.presetGUID.Data4[5]
+    || last_guid.Data4[6] != ctx->init_encode_params.presetGUID.Data4[6]
+    || last_guid.Data4[7] != ctx->init_encode_params.presetGUID.Data4[7]) {
+        needs_reconfig = 1;
+        params.resetEncoder = 1;
+        params.forceIDR = 1;
+        needs_encode_config = 1;
+    }
 
     if (!needs_encode_config)
         params.reInitEncodeParams.encodeConfig = NULL;
@@ -2159,7 +2266,7 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
     if (needs_reconfig) {
         ret = p_nvenc->nvEncReconfigureEncoder(ctx->nvencoder, &params);
         if (ret != NV_ENC_SUCCESS) {
-            nvenc_print_error(avctx, ret, "failed to reconfigure nvenc");
+            av_log(avctx, AV_LOG_VERBOSE,"nvEncReconfigureEncoder err!");
         } else {
             if (reconfig_dar) {
                 ctx->init_encode_params.darHeight = dh;
@@ -2318,7 +2425,6 @@ int ff_nvenc_receive_packet(AVCodecContext *avctx, AVPacket *pkt)
     NvencContext *ctx = avctx->priv_data;
 
     AVFrame *frame = ctx->frame;
-
     if ((!ctx->cu_context && !ctx->d3d11_device) || !ctx->nvencoder)
         return AVERROR(EINVAL);
 
