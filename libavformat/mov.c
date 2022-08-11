@@ -7457,14 +7457,15 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 a.size <= INT64_MAX - start_pos &&
                 ((!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete) ||
                  start_pos + a.size == avio_size(pb))) {
-                if (!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete)
+                if (!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete) {
                     c->next_root_atom = start_pos + a.size;
-                if (!c->found_mdat && c->ignore_mdat && c->need_found_moof && c->found_moof) {
-                    int index = search_frag_moof_offset(&c->frag_index, c->fragment.moof_offset);
-                    if (index + 1 < c->frag_index.nb_items) {
-                        c->next_root_atom = c->frag_index.item[index + 1].moof_offset;
+                    if (!c->found_mdat && c->ignore_mdat && c->need_found_moof && c->found_moof) {
+                        int index = search_frag_moof_offset(&c->frag_index, c->fragment.moof_offset);
+                        if (index + 1 < c->frag_index.nb_items) {
+                            c->next_root_atom = c->frag_index.item[index + 1].moof_offset;
+                        }
                     }
-                }    
+                }
                 c->ignore_mdat = 0;
                 c->atom_depth --;
                 return 0;
