@@ -279,7 +279,11 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
 
     x264_picture_init( &x4->pic );
     x4->pic.img.i_csp   = x4->params.i_csp;
-    if (x264_bit_depth > 8)
+#if X264_BUILD >= 153
+    if (x4->params.i_bitdepth > 8)
+#else
+        if (x264_bit_depth > 8)
+#endif
         x4->pic.img.i_csp |= X264_CSP_HIGH_DEPTH;
     x4->pic.img.i_plane = avfmt2_num_planes(ctx->pix_fmt);
 
@@ -886,15 +890,36 @@ static const enum AVPixelFormat pix_fmts_8bit_rgb[] = {
     AV_PIX_FMT_NONE
 };
 #endif
-
+static const enum AVPixelFormat pix_fmts_all[] = {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_YUVJ420P,
+        AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_YUVJ422P,
+        AV_PIX_FMT_YUV444P,
+        AV_PIX_FMT_YUVJ444P,
+        AV_PIX_FMT_NV12,
+        AV_PIX_FMT_NV16,
+#ifdef X264_CSP_NV21
+        AV_PIX_FMT_NV21,
+#endif
+        AV_PIX_FMT_YUV420P10,
+        AV_PIX_FMT_YUV422P10,
+        AV_PIX_FMT_YUV444P10,
+        AV_PIX_FMT_NV20,
+        AV_PIX_FMT_NONE
+};
 static av_cold void X264_init_static(AVCodec *codec)
 {
+#if X264_BUILD < 153
     if (x264_bit_depth == 8)
         codec->pix_fmts = pix_fmts_8bit;
     else if (x264_bit_depth == 9)
         codec->pix_fmts = pix_fmts_9bit;
     else if (x264_bit_depth == 10)
         codec->pix_fmts = pix_fmts_10bit;
+#else
+    codec->pix_fmts = pix_fmts_all;
+#endif
 }
 
 #define OFFSET(x) offsetof(X264Context, x)

@@ -2121,7 +2121,6 @@ static int open_demux_for_component(AVFormatContext *s, struct representation *p
         }
     }
     av_dict_copy(&s->metadata, pls->ctx->metadata, 0);
-    s->hijack_code = pls->ctx->hijack_code;
     pls->is_opened = 1;
 
     return 0;
