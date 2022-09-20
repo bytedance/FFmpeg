@@ -152,7 +152,7 @@ typedef struct ATempoContext {
     uint64_t nsamples_out;
 } ATempoContext;
 
-#define YAE_ATEMPO_MIN 0.5
+#define YAE_ATEMPO_MIN 0.1
 #define YAE_ATEMPO_MAX 100.0
 
 #define OFFSET(x) offsetof(ATempoContext, x)
