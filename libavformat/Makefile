@@ -4,6 +4,7 @@ DESC = FFmpeg container format library
 HEADERS = avformat.h                                                    \
           avio.h                                                        \
           version.h                                                     \
+          url.h                                                         \
 
 OBJS = allformats.o         \
        avio.o               \
