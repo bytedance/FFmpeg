@@ -291,6 +291,12 @@ enum AVPacketSideDataType {
     AV_PKT_DATA_S12M_TIMECODE,
 
     /**
+     * The disposal method that should be used with the frame. If missing,
+     * the frame will not be disposed. This contains exactly one byte.
+     */
+    AV_PKT_DATA_GIF_FRAME_DISPOSAL,
+
+    /**
      * The number of side data types.
      * This is not part of the public API/ABI in the sense that it may
      * change when new side data types are added.
@@ -427,6 +433,19 @@ typedef struct AVPacketList {
  * be discarded by the decoder.  I.e. Non-reference frames.
  */
 #define AV_PKT_FLAG_DISPOSABLE 0x0010
+
+/**
+ * The packet reach stream id eof
+ */
+#define AV_PKT_FLAG_EOF        0x4000
+/**
+ * The packet is the first packet from a source in concat
+ */
+#define AV_PKT_FLAG_NEW_SEG    0x8000
+/**
+ * The packet is end of the range
+ */
+#define AV_PKT_FLAG_EOR        0x9000
 
 enum AVSideDataParamChangeFlags {
     AV_SIDE_DATA_PARAM_CHANGE_CHANNEL_COUNT  = 0x0001,
