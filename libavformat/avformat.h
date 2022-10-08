@@ -483,6 +483,31 @@ typedef struct AVProbeData {
 
 #define AVFMT_SEEK_TO_PTS   0x4000000 /**< Seeking is based on PTS */
 
+
+enum NetWorkStatusLog {
+    IsDNSParsed,
+    IsSocketConnected,
+    IsPacketRecved,
+    IsNetworkIORead,
+    IsHttpRepuestFinish,
+    IsHttpResponseFinish,
+    IsDNSStart,
+    IsHttpOpenStart,
+    IsTransOpenStart,
+    IsSocketCreateSuccess,
+    Is3xxHappen,
+    IsCertVerifyDetail,
+    IsRedirectURL,
+    IsCDNCacheStatus,
+    IsCDNTimingInfo,
+    IsTcpFastOpenSuccess= 250,
+    IsSocketOpenErr,
+    IsSocketReadErr,
+    IsSocketWriteErr,
+    // WARNING : Do not add key greater than 1000
+    IsCustomKeyStart = 1000,
+};
+
 /**
  * @addtogroup lavf_encoding
  * @{
