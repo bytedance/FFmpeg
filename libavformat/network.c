@@ -75,6 +75,18 @@ int ff_network_wait_fd(int fd, int write)
     return ret < 0 ? ff_neterrno() : p.revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
 }
 
+static int ff_network_wait_fds(int fd0, int fd1, int write)
+{
+    int ev = write ? POLLOUT : POLLIN;
+    struct pollfd p[2] = {
+        { .fd = fd0, .events = ev, .revents = 0 },
+        { .fd = fd1, .events = ev, .revents = 0 }
+    };
+    int ret;
+    ret = poll(&p, 2, POLLING_TIME);
+    return ret < 0 ? ff_neterrno() : p[0].revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
+}
+
 int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterruptCB *int_cb)
 {
     int ret;
@@ -83,7 +95,11 @@ int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterrupt
     while (1) {
         if (ff_check_interrupt(int_cb))
             return AVERROR_EXIT;
-        ret = ff_network_wait_fd(fd, write);
+        
+        if (int_cb && int_cb->fd > 0)
+            ret = ff_network_wait_fds(fd, int_cb->fd, write);
+        else
+            ret = ff_network_wait_fd(fd, write);
         if (ret != AVERROR(EAGAIN))
             return ret;
         if (timeout > 0) {

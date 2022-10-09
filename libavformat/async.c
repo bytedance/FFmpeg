@@ -241,7 +241,7 @@ static int async_open(URLContext *h, const char *arg, int flags, AVDictionary **
 {
     Context         *c = h->priv_data;
     int              ret;
-    AVIOInterruptCB  interrupt_callback = {.callback = async_check_interrupt, .opaque = h};
+    AVIOInterruptCB  interrupt_callback = {.callback = async_check_interrupt, .opaque = h, .fd = 0};
 
     av_strstart(arg, "async:", &arg);
 

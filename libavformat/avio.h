@@ -58,6 +58,7 @@
 typedef struct AVIOInterruptCB {
     int (*callback)(void*);
     void *opaque;
+    int  fd;
 } AVIOInterruptCB;
 
 /**
