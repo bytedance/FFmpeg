@@ -435,6 +435,11 @@ int av_append_packet(AVIOContext *s, AVPacket *pkt, int size);
 
 struct AVCodecTag;
 
+typedef struct AVFragmentInfo {
+    int64_t offset;
+    int64_t timestamp;
+} AVFragmentInfo;
+
 /**
  * This structure contains the data a format has to probe a file.
  */
@@ -771,6 +776,20 @@ typedef struct AVInputFormat {
                               int64_t *pos, int64_t pos_limit);
 
     /**
+     * Get the timestamp by sample_index.
+     * @return the timestamp or AV_NOPTS_VALUE if an error occurred
+     */
+    int64_t (*read_timestamp2)(struct AVFormatContext *s, int stream_index,
+                              int sample_index);
+
+    /**
+     * Get fragment info.
+     * @return 0 if OK, < 0 on error
+     */
+    int (*read_fragment_info)(struct AVFormatContext *s, int stream_index,
+                              AVFragmentInfo **frag_infos, int *n_frag_infos);
+
+    /**
      * Start/resume playing - only meaningful if using a network-based format
      * (RTSP).
      */
@@ -809,6 +828,16 @@ typedef struct AVInputFormat {
      */
     int (*free_device_capabilities)(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps);
 #endif
+
+    /**
+     * Read demuxer match io internal cache timeStamp
+     */
+    int64_t (*read_cache_timestamp)(struct AVFormatContext *s, int stream_index, int flags);
+
+    /**
+     * Close http auto range read
+     */
+    int (*close_auto_range_read)(struct AVFormatContext *s);
 } AVInputFormat;
 /**
  * @}

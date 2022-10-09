@@ -889,4 +889,13 @@ void ff_format_set_url(AVFormatContext *s, char *url);
 
 void avpriv_register_devices(const AVOutputFormat * const o[], const AVInputFormat * const i[]);
 
+/**
+ * Wrap a given time stamp, if there is an indication for an overflow
+ *
+ * @param st stream
+ * @param timestamp the time stamp to wrap
+ * @return resulting time stamp
+ */
+int64_t wrap_timestamp(const AVStream *st, int64_t timestamp);
+
 #endif /* AVFORMAT_INTERNAL_H */
