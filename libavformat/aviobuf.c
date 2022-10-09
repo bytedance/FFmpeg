@@ -361,6 +361,18 @@ int64_t avio_size(AVIOContext *s)
     return size;
 }
 
+int64_t avio_recved(AVIOContext *s)
+{
+    int64_t size;
+
+    if (!s)
+        return AVERROR(EINVAL);
+
+    if (!s->seek)
+        return AVERROR(ENOSYS);
+    return s->seek(s->opaque, 0, AVSEEK_CPSIZE);
+}
+
 int avio_feof(AVIOContext *s)
 {
     if(!s)
@@ -370,6 +382,26 @@ int avio_feof(AVIOContext *s)
         fill_buffer(s);
     }
     return s->eof_reached;
+}
+
+int avio_close_autorange(AVIOContext *s)
+{
+    if (!s)
+        return AVERROR(EINVAL);
+
+    if (!s->seek)
+        return AVERROR(ENOSYS);
+    return s->seek(s->opaque, 0, AVSEEK_RESET_AUTO_RANGE);
+}
+
+int64_t avio_get_download_offset(AVIOContext *s)
+{
+    if (!s)
+        return AVERROR(EINVAL);
+
+    if (!s->seek)
+        return AVERROR(ENOSYS);
+    return s->seek(s->opaque, 0, AVSEEK_DOWNLOAD_OFFSET);
 }
 
 void avio_wl32(AVIOContext *s, unsigned int val)
@@ -1164,6 +1196,21 @@ int avio_open2(AVIOContext **s, const char *filename, int flags,
                const AVIOInterruptCB *int_cb, AVDictionary **options)
 {
     return ffio_open_whitelist(s, filename, flags, int_cb, options, NULL, NULL);
+}
+
+int avio_shutdown(AVIOContext* s,int flags) 
+{
+    URLContext *h;
+    if(!s) {
+        return 0;
+    }
+
+    h = s->opaque;
+    if(!h) {
+        return 0;
+    }
+
+    return ffurl_shutdown(h, flags);
 }
 
 int avio_close(AVIOContext *s)

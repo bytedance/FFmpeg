@@ -530,6 +530,15 @@ void avio_write_marker(AVIOContext *s, int64_t time, enum AVIODataMarkerType typ
  */
 #define AVSEEK_SIZE 0x10000
 
+#define AVSEEK_CPSIZE           0x1000
+#define AVSEEK_PERCENT          0x3000
+#define AVSEEK_ADDR             0x4000
+#define AVSEEK_SETDUR           0x2000
+#define AVSEEK_CACHEEND         0x5000
+#define AVSEEK_FILESET          0x6000
+#define AVSEEK_RESET_AUTO_RANGE 0x7000
+#define AVSEEK_DOWNLOAD_OFFSET  0x7001
+
 /**
  * Passing this flag as the "whence" parameter to a seek function causes it to
  * seek by any means (like reopening and linear reading) or other normally unreasonable
@@ -566,10 +575,28 @@ static av_always_inline int64_t avio_tell(AVIOContext *s)
 int64_t avio_size(AVIOContext *s);
 
 /**
+* Get received size.
+* @return recved size or AVERROR
+*/
+int64_t avio_recved(AVIOContext *s);
+
+/**
  * Similar to feof() but also returns nonzero on read errors.
  * @return non zero if and only if at end of file or a read error happened when reading.
  */
 int avio_feof(AVIOContext *s);
+
+/**
+* Close auto range
+* @return 0 for success
+*/
+int avio_close_autorange(AVIOContext *s);
+
+/**
+ * Get download offset
+ * @return < 0 for error, >= 0 for download offset
+ */
+int64_t avio_get_download_offset(AVIOContext *s);
 
 /**
  * Writes a formatted string to the context.
@@ -699,6 +726,8 @@ int avio_get_str16be(AVIOContext *pb, int maxlen, char *buf, int buflen);
  * call the underlying seek function directly.
  */
 #define AVIO_FLAG_DIRECT 0x8000
+#define AVIO_FLAG_STOP   0x0010
+#define AVIO_FLAG_REUSE  0x0020
 
 /**
  * Create and initialize a AVIOContext for accessing the
@@ -736,6 +765,16 @@ int avio_open(AVIOContext **s, const char *url, int flags);
  */
 int avio_open2(AVIOContext **s, const char *url, int flags,
                const AVIOInterruptCB *int_cb, AVDictionary **options);
+
+/**
+ * Signal that we are done reading or writing the stream.
+ * 
+ * @param flags flags which control how the resource indicated by url
+ * is to be shutdown
+ * @return a negative value if an error condition occurred, 0
+ * otherwise
+ */
+int avio_shutdown(AVIOContext* s,int flags);
 
 /**
  * Close the resource accessed by the AVIOContext s and free it.
