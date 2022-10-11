@@ -25,6 +25,7 @@ HEADERS = ac3_parser.h                                                  \
           videotoolbox.h                                                \
           vorbis_parser.h                                               \
           xvmc.h                                                        \
+          ttexport.h                                                    \
 
 OBJS = ac3_parser.o                                                     \
        adts_parser.o                                                    \
@@ -58,6 +59,7 @@ OBJS = ac3_parser.o                                                     \
        utils.o                                                          \
        vorbis_parser.o                                                  \
        xiph.o                                                           \
+       ttexport.o                                                       \
 
 # subsystems
 OBJS-$(CONFIG_AANDCTTABLES)            += aandcttab.o

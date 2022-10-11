@@ -836,6 +836,10 @@ extern AVCodec ff_vp9_qsv_decoder;
 extern AVCodec ff_vp9_vaapi_encoder;
 extern AVCodec ff_vp9_qsv_encoder;
 
+/* external custom codec register by tt_register_avcodec */ 
+extern AVCodec ff_bytevc1_decoder;
+extern AVCodec ff_bytevc2_decoder;
+
 // The iterate API is not usable with ossfuzz due to the excessive size of binaries created
 #if CONFIG_OSSFUZZ
 AVCodec * codec_list[] = {
