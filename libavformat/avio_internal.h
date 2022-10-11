@@ -187,4 +187,17 @@ void ffio_reset_dyn_buf(AVIOContext *s);
  */
 void ffio_free_dyn_buf(AVIOContext **s);
 
+
+
+#define SANDBOX_CHECK_URL_PROCEED 1 /** sandbox check succeed */
+
+/**
+ * Support http network interceptor for trust center
+ * @param url    the address to be checked
+ * @param param  http parm
+ * @param header http header
+ * @return int return SANDBOX_CHECK_URL_PROCEED for approval
+ */
+int ff_sandbox_check_url(const char *url, const char *param, const char *header);
+
 #endif /* AVFORMAT_AVIO_INTERNAL_H */

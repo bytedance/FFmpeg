@@ -27,6 +27,7 @@
 #include "os_support.h"
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 #if CONFIG_NETWORK
 #include "network.h"
 #endif
@@ -204,6 +205,11 @@ int ffurl_connect(URLContext *uc, AVDictionary **options)
         return err;
     if ((err = av_dict_set(options, "protocol_blacklist", uc->protocol_blacklist, 0)) < 0)
         return err;
+
+    if (ff_sandbox_check_url(uc->filename, NULL, NULL) != SANDBOX_CHECK_URL_PROCEED) {
+        av_log(uc, AV_LOG_ERROR, "sandbox check error! url: '%s'\n", uc->filename);
+        return AVERROR_HTTP_OTHER_4XX;
+    }
 
     err =
         uc->prot->url_open2 ? uc->prot->url_open2(uc,
@@ -670,5 +676,22 @@ int ff_rename(const char *url_src, const char *url_dst, void *logctx)
     int ret = avpriv_io_move(url_src, url_dst);
     if (ret < 0)
         av_log(logctx, AV_LOG_ERROR, "failed to rename file %s to %s: %s\n", url_src, url_dst, av_err2str(ret));
+    return ret;
+}
+
+int ff_sandbox_check_url(const char *url, const char *param, const char *header) {
+    int ret = SANDBOX_CHECK_URL_PROCEED;
+    typedef int (*Sender)(const char*, const char*, const char*);
+    Sender proceed = NULL;
+
+    char* sandboxbuf = getenv("orbuculumIsProceedRequest");
+    if (sandboxbuf) {
+        size_t address = strtoull(sandboxbuf, NULL, 16);
+        if (address != 0) {
+            proceed = (Sender) address;
+        }
+    }
+
+    ret = proceed == NULL ? SANDBOX_CHECK_URL_PROCEED : proceed(url, param, header);
     return ret;
 }
