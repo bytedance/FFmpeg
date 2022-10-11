@@ -532,6 +532,13 @@ extern AVInputFormat  ff_libmodplug_demuxer;
 extern AVInputFormat  ff_libopenmpt_demuxer;
 extern AVInputFormat  ff_vapoursynth_demuxer;
 
+/* external inputformat register via tt_register_input_format */
+extern AVInputFormat ff_cmaf_demuxer;
+extern AVInputFormat ff_avph_demuxer;
+extern AVInputFormat ff_llash_demuxer;
+extern AVInputFormat ff_live_demuxer;
+extern AVInputFormat ff_webrtc_demuxer;
+
 #include "libavformat/muxer_list.c"
 #include "libavformat/demuxer_list.c"
 
