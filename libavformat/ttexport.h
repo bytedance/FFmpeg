@@ -47,4 +47,9 @@ int tt_register_protocol(URLProtocol *prot, int protocol_size);
  */
 int tt_register_input_format(AVInputFormat *format, int format_size);
 
+/**
+ * Set a custom borongssl verify callback
+ */
+void tt_set_verify_callback(int (*callback)(void*, void*, const char*, int));
+
 #endif /* AVFORMAT_TTEXPORT_H */

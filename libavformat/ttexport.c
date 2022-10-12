@@ -116,3 +116,17 @@ int tt_register_input_format(AVInputFormat *format, int format_size)
     }
     return ret;
 }
+
+static int (*ff_custom_verify_callback)(void*, void*, const char*, int) = NULL;
+
+void tt_set_verify_callback(int (*callback)(void*, void*, const char*, int))
+{
+    ff_custom_verify_callback = callback;
+}
+
+int ff_do_custom_verify_callback(void* context, void* ssl, const char* host, int port) {
+    if (ff_custom_verify_callback != NULL) {
+        return ff_custom_verify_callback(context, ssl, host, port);
+    }
+    return 0;
+}

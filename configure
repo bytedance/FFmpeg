@@ -1956,6 +1956,7 @@ CONFIG_LIST="
     thumb
     valgrind_backtrace
     xmm_clobber_test
+    boringsslverify
     $COMPONENT_LIST
 "
 
@@ -3510,6 +3511,7 @@ libssh_protocol_deps="libssh"
 libtls_conflict="openssl gnutls mbedtls"
 libzmq_protocol_deps="libzmq"
 libzmq_protocol_select="network"
+boringsslverify_deps="openssl"
 
 # filters
 afftdn_filter_deps="avcodec"

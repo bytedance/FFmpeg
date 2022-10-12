@@ -310,6 +310,11 @@ int ff_socket(int domain, int type, int protocol);
 void ff_log_net_error(void *ctx, int level, const char* prefix);
 
 /**
+ * Do custom ssl verify with the delegate set by tt_set_verify_callback
+ */
+int ff_do_custom_verify_callback(void* context, void* ssl, const char* host, int port);
+
+/**
  * Connect to any of the given addrinfo addresses, with multiple attempts
  * running in parallel.
  *

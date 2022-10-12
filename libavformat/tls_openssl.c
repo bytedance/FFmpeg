@@ -232,6 +232,23 @@ static BIO_METHOD url_bio_method = {
 };
 #endif
 
+#if CONFIG_BORINGSSLVERIFY
+
+static enum ssl_verify_result_t ff_verify_custom_callbak(SSL *ssl, uint8_t *out_alert) {
+    TLSContext *p = NULL;
+    TLSShared  *c = NULL;
+    URLContext *h = (URLContext*)(SSL_get_ex_data(ssl, openssl_data_index));
+    if (!h) {
+        av_log(h, AV_LOG_ERROR, "verify call fail, URLContext null\n");
+        return ssl_verify_invalid;
+    }
+    p = h->priv_data;
+    c = &p->tls_shared;
+    
+    return ff_do_custom_verify_callback(h, ssl, c->host, c->port);
+}
+#endif
+
 static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **options)
 {
     TLSContext *p = h->priv_data;
@@ -274,8 +291,14 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     }
     // Note, this doesn't check that the peer certificate actually matches
     // the requested hostname.
-    if (c->verify)
+    if (c->verify) {
+    #if CONFIG_BORINGSSLVERIFY
+        SSL_CTX_set_reverify_on_resume(p->ctx, 1);
+        SSL_CTX_set_custom_verify(p->ctx, SSL_VERIFY_PEER, ff_verify_custom_callbak);
+    #else
         SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+    #endif
+    }
     p->ssl = SSL_new(p->ctx);
     if (!p->ssl) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(ERR_get_error(), NULL));
