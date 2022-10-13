@@ -5863,3 +5863,17 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 }
+
+int64_t av_read_cache_timestamp(AVFormatContext *s, int stream_index, int flags) {
+    if (!s || !s->iformat || !s->iformat->read_cache_timestamp) {
+        return 0ll;
+    }
+    return s->iformat->read_cache_timestamp(s, stream_index, flags);
+}
+
+int av_close_auto_range_read(AVFormatContext *s) {
+    if (!s || !s->iformat || !s->iformat->close_auto_range_read) {
+        return -1;
+    }
+    return s->iformat->close_auto_range_read(s);
+}

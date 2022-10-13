@@ -3060,6 +3060,17 @@ int avformat_transfer_internal_stream_timing_info(const AVOutputFormat *ofmt,
 AVRational av_stream_get_codec_timebase(const AVStream *st);
 
 /**
+ * Get the timestamp by sample_index.
+ * @return the timestamp or AV_NOPTS_VALUE if an error occurred
+ */
+int64_t av_read_cache_timestamp(AVFormatContext *s, int stream_index, int flags);
+
+/**
+ * Close http auto range read
+ */
+int av_close_auto_range_read(AVFormatContext *s);
+
+/**
  * @}
  */
 
