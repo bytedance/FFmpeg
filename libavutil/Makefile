@@ -86,6 +86,7 @@ HEADERS = adler32.h                                                     \
           tx.h                                                          \
           film_grain_params.h                                           \
           ttexport.h                                                    \
+          mdl_info_wrapper.h                                            \
 
 HEADERS-$(CONFIG_LZO)                   += lzo.h
 
@@ -175,6 +176,7 @@ OBJS = adler32.o                                                        \
        film_grain_params.o                                              \
        ttexport.o                                                       \
        drm.o                                                            \
+       mdl_info_wrapper.o                                               \
 
 
 OBJS-$(CONFIG_CUDA)                     += hwcontext_cuda.o
