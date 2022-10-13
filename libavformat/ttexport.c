@@ -21,6 +21,7 @@
 
 #include "ttexport.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "network.h"
 #include "url.h"
 #include "internal.h"
@@ -62,8 +63,6 @@ int tt_register_protocol(URLProtocol *prot, int protocol_size)
             memcpy(&ff_live_protocol, prot, protocol_size);
         } else if (strcmp(prot->name, "httpx") == 0) {
             memcpy(&ff_httpx_protocol, prot, protocol_size);
-        } else if (strcmp(prot->name, "thirdparty") == 0) {
-            memcpy(&ff_thirdparty_protocol, prot, protocol_size);
         } else {
             ret = -1;
         }
@@ -71,6 +70,13 @@ int tt_register_protocol(URLProtocol *prot, int protocol_size)
     return ret;
 }
 
+int tt_register_3rd_protocol(URLProtocol *prot, int protocol_size)
+{
+    if (protocol_size != sizeof(URLProtocol) || !prot)
+        return -1;
+    memcpy(&ff_thirdparty_protocol, prot, protocol_size);
+    return 0;
+}
 
 static int dummy_probe(const AVProbeData *p)
 {
@@ -141,4 +147,26 @@ void tt_set_pts_info(AVStream *s, int pts_wrap_bits,
 void tt_read_frame_flush(AVFormatContext *s)
 {
     ff_read_frame_flush(s);
+}
+
+int tt_stream_encode_params_copy(AVStream *dst, const AVStream *src)
+{
+    return ff_stream_encode_params_copy(dst, src);
+}
+
+int tt_copy_whiteblacklists(AVFormatContext *dst, const AVFormatContext *src)
+{
+    return ff_copy_whiteblacklists(dst, src);
+}
+
+int tt_io_init_context(AVIOContext *s,
+                  unsigned char *buffer,
+                  int buffer_size,
+                  int write_flag,
+                  void *opaque,
+                  int (*read_packet)(void *opaque, uint8_t *buf, int buf_size),
+                  int (*write_packet)(void *opaque, uint8_t *buf, int buf_size),
+                  int64_t (*seek)(void *opaque, int64_t offset, int whence))
+{
+    return ffio_init_context(s, buffer, buffer_size, write_flag, opaque, read_packet, write_packet, seek);
 }

@@ -38,6 +38,15 @@
 int tt_register_protocol(URLProtocol *prot, int protocol_size);
 
 /**
+ * Only support register one protocol
+ * If call this more than once, only the last once registered.
+ * @param prot pointer to URLProtocol.
+ * @param protocol_size additional abi check, must be same as sizeof(URLProtocol)
+ * @return int Return 0 for success, others failed.
+ */
+int tt_register_3rd_protocol(URLProtocol *prot, int protocol_size);
+
+/**
  * A custom AVInputFormat for private protocol implementation 
  * This method replace the dummy format defined in ffmpeg, without append new one
  *
@@ -102,5 +111,51 @@ void tt_set_pts_info(AVStream *s, int pts_wrap_bits,
 
 /** Flush the frame reader. */
 void tt_read_frame_flush(AVFormatContext *s);
+
+/**
+ * Copy encoding parameters from source to destination stream
+ *
+ * @param dst pointer to destination AVStream
+ * @param src pointer to source AVStream
+ * @return >=0 on success, AVERROR code on error
+ */
+int tt_stream_encode_params_copy(AVStream *dst, const AVStream *src);
+
+/**
+ * Copies the whilelists from one context to the other
+ */
+int tt_copy_whiteblacklists(AVFormatContext *dst, const AVFormatContext *src);
+
+/**
+ * Initialize an AVIOContext for buffered I/O.
+ * avio_alloc_context is a better choice.
+ *
+ * @param buffer Memory block for input/output operations via AVIOContext.
+ *        The buffer must be allocated with av_malloc() and friends.
+ *        It may be freed and replaced with a new buffer by libavformat.
+ *        AVIOContext.buffer holds the buffer currently in use,
+ *        which must be later freed with av_free().
+ * @param buffer_size The buffer size is very important for performance.
+ *        For protocols with fixed blocksize it should be set to this blocksize.
+ *        For others a typical size is a cache page, e.g. 4kb.
+ * @param write_flag Set to 1 if the buffer should be writable, 0 otherwise.
+ * @param opaque An opaque pointer to user-specific data.
+ * @param read_packet  A function for refilling the buffer, may be NULL.
+ *                     For stream protocols, must never return 0 but rather
+ *                     a proper AVERROR code.
+ * @param write_packet A function for writing the buffer contents, may be NULL.
+ *        The function may not change the input buffers content.
+ * @param seek A function for seeking to specified byte position, may be NULL.
+ *
+ * @return 0
+ */
+int tt_io_init_context(AVIOContext *s,
+                  unsigned char *buffer,
+                  int buffer_size,
+                  int write_flag,
+                  void *opaque,
+                  int (*read_packet)(void *opaque, uint8_t *buf, int buf_size),
+                  int (*write_packet)(void *opaque, uint8_t *buf, int buf_size),
+                  int64_t (*seek)(void *opaque, int64_t offset, int whence));
 
 #endif /* AVFORMAT_TTEXPORT_H */
