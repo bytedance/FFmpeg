@@ -252,6 +252,30 @@ typedef struct AVClass {
 void av_log(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
 
 /**
+ * Send the specified message to the log if the level is less than or equal
+ * to the current av_log_level.
+ *
+ * @param avcl A pointer to an arbitrary struct of which the first field is a
+ *        pointer to an AVClass struct or NULL if general log.
+ * @param level The importance level of the message expressed using a @ref
+ *        lavu_log_constants "Logging Constant".
+ * @param code The code will be passed to logging callback function.
+ * @param fmt The format string (printf-compatible) that specifies how
+ *        subsequent arguments are converted to output.
+ */
+void av_logc(void *avcl, int level, int code, const char *fmt, ...);
+
+/**
+ * Send the warning message to the log.
+ */
+#define av_warn2(avcl,code,...) av_logc(avcl,AV_LOG_ERROR + 1, code, __VA_ARGS__)
+
+/**
+ * Send the error message to the log.
+ */
+#define av_error(avcl,code,...) av_logc(avcl,AV_LOG_ERROR - 1, code, __VA_ARGS__)
+
+/**
  * Send the specified message to the log once with the initial_level and then with
  * the subsequent_level. By default, all logging messages are sent to
  * stderr. This behavior can be altered by setting a different logging callback
@@ -319,6 +343,20 @@ void av_log_set_level(int level);
  * @param callback A logging function with a compatible signature.
  */
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list));
+
+/**
+ * Set the thread local source log level
+ *
+ * @param level Logging level
+ */
+void av_log_set_tls_level(int level);
+
+/**
+ * Set thread local source callback
+ *
+ * @param callback A logging function with a compatible signature.
+ */
+void av_log_set_tls_callback(void (*callback)(void*, int, int, const char*, va_list));
 
 /**
  * Default logging callback

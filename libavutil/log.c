@@ -44,6 +44,8 @@
 static AVMutex mutex = AV_MUTEX_INITIALIZER;
 
 #define LINE_SZ 1024
+#define AV_LOG_LEVEL_INVALID INT32_MIN
+#define LOGC_CODE_INVALID INT32_MIN
 
 #if HAVE_VALGRIND_VALGRIND_H
 #include <valgrind/valgrind.h>
@@ -53,6 +55,9 @@ static AVMutex mutex = AV_MUTEX_INITIALIZER;
 
 static int av_log_level = AV_LOG_INFO;
 static int flags;
+
+static __thread int av_log_tls_level = AV_LOG_LEVEL_INVALID;
+static __thread void (*av_log_tls_callback)(void*, int, int, const char*, va_list) = NULL;
 
 #define NB_LEVELS 8
 #if defined(_WIN32) && HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
@@ -412,6 +417,16 @@ void av_log(void* avcl, int level, const char *fmt, ...)
     va_end(vl);
 }
 
+void av_logc(void *avcl, int level, int code, const char *fmt, ...)
+{
+    if(av_log_tls_callback) {
+        va_list vl;
+        va_start(vl, fmt);
+        av_log_tls_callback(avcl, level, code, fmt, vl);
+        va_end(vl);
+    }
+}
+
 void av_log_once(void* avcl, int initial_level, int subsequent_level, int *state, const char *fmt, ...)
 {
     va_list vl;
@@ -428,6 +443,20 @@ void av_vlog(void* avcl, int level, const char *fmt, va_list vl)
     if (avc && avc->version >= (50 << 16 | 15 << 8 | 2) &&
         avc->log_level_offset_offset && level >= AV_LOG_FATAL)
         level += *(int *) (((uint8_t *) avcl) + avc->log_level_offset_offset);
+
+    if(av_log_tls_callback) {
+
+        int log_level = av_log_level;
+        if (av_log_tls_level != AV_LOG_LEVEL_INVALID) {
+            log_level = av_log_tls_level;
+        }
+
+        if(level <= log_level) {
+            av_log_tls_callback(avcl, level, LOGC_CODE_INVALID, fmt, vl);
+        }
+        return;
+    }
+
     if (log_callback)
         log_callback(avcl, level, fmt, vl);
 }
@@ -455,6 +484,16 @@ int av_log_get_flags(void)
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list))
 {
     av_log_callback = callback;
+}
+
+void av_log_set_tls_callback(void (*callback)(void*, int, int, const char*, va_list))
+{
+    av_log_tls_callback = callback;
+}
+
+void av_log_set_tls_level(int level)
+{
+    av_log_tls_level = level;
 }
 
 static void missing_feature_sample(int sample, void *avc, const char *msg,
