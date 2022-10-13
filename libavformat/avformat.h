@@ -513,6 +513,15 @@ enum NetWorkStatusLog {
     IsCustomKeyStart = 1000,
 };
 
+enum NetWorkInfo {
+    IsLoaderType = 0,
+    IsConnectionInfo = 1,
+    IsGetResponseHeaders = 31,
+    IsMDLInfoCallBack = 32,
+    IsHTTPReqCallback = 33,
+    IsSidxInfoCallback = 34
+};
+
 /**
  * @addtogroup lavf_encoding
  * @{
@@ -2383,6 +2392,20 @@ int av_find_best_stream(AVFormatContext *ic,
  *       contain data that needs to be freed.
  */
 int av_read_frame(AVFormatContext *s, AVPacket *pkt);
+
+
+/**
+ * Get timestamp by sample index.
+ * @return timestamp if OK, AV_NOPTS_VALUE on error
+ */
+int64_t av_read_timestamp2(AVFormatContext *s, int stream_index, int sample_index);
+
+/**
+ * Get fragment info.
+ * @return 0 if OK, < 0 on error
+ */
+int av_read_fragment_info(struct AVFormatContext *s, int stream_index, AVFragmentInfo **frag_infos, int *n_frag_infos);
+
 
 /**
  * Seek to the keyframe at timestamp.

@@ -1829,6 +1829,25 @@ return_packet:
     return ret;
 }
 
+int64_t av_read_timestamp2(AVFormatContext *s, int stream_index, int sample_index)
+{
+    if (!s || !s->iformat || !s->iformat->read_timestamp2) {
+        return AV_NOPTS_VALUE;
+    }
+    return s->iformat->read_timestamp2(s, stream_index, sample_index);
+}
+
+int av_read_fragment_info(struct AVFormatContext *s, 
+                          int stream_index, 
+                          AVFragmentInfo **frag_infos, 
+                          int *n_frag_infos)
+{
+    if (!s || !s->iformat || !s->iformat->read_fragment_info) {
+        return AVERROR(EINVAL);
+    }
+    return s->iformat->read_fragment_info(s, stream_index, frag_infos, n_frag_infos);
+}
+
 /* XXX: suppress the packet queue */
 static void flush_packet_queue(AVFormatContext *s)
 {
