@@ -52,4 +52,55 @@ int tt_register_input_format(AVInputFormat *format, int format_size);
  */
 void tt_set_verify_callback(int (*callback)(void*, void*, const char*, int));
 
+
+/**
+ * DNS resolver delegate methods
+ */
+typedef void* (*tt_dns_start) (intptr_t handle, const char* hostname, int user_flag);
+typedef int   (*tt_dns_result)(void* object, char* ipaddress, int size);
+typedef void  (*tt_dns_free)  (void* object);
+
+/**
+ * Register dns delegate methods to ffmpeg
+ */
+void tt_register_dnsparser(tt_dns_start dns_start, tt_dns_result dns_result, tt_dns_free dns_free);
+
+
+/**
+ * Network callback methods
+ */
+typedef void (*tt_save_ip)       (intptr_t handle, const char* ip, int user_flag);
+typedef void (*tt_info_callback) (intptr_t handle, int key,  int64_t value, const char* strValue);
+typedef void (*tt_log_callback)  (intptr_t handle, int type, int user_flag);
+typedef void (*tt_read_callback) (intptr_t handle, int type, int size);
+
+
+/**
+ * Register io events delegate methods to ffmpeg
+ */
+void tt_register_io_callback(tt_save_ip       save_ip, 
+                             tt_log_callback  log_callback, 
+                             tt_read_callback read_callback, 
+                             tt_info_callback info_callback);
+
+
+
+/**
+ * Set the time base and wrapping info for a given stream. This will be used
+ * to interpret the stream's timestamps. If the new time base is invalid
+ * (numerator or denominator are non-positive), it leaves the stream
+ * unchanged.
+ *
+ * @param s stream
+ * @param pts_wrap_bits number of bits effectively used by the pts
+ *        (used for wrap control)
+ * @param pts_num time base numerator
+ * @param pts_den time base denominator
+ */
+void tt_set_pts_info(AVStream *s, int pts_wrap_bits,
+                         unsigned int pts_num, unsigned int pts_den);
+
+/** Flush the frame reader. */
+void tt_read_frame_flush(AVFormatContext *s);
+
 #endif /* AVFORMAT_TTEXPORT_H */

@@ -130,3 +130,15 @@ int ff_do_custom_verify_callback(void* context, void* ssl, const char* host, int
     }
     return 0;
 }
+
+void tt_set_pts_info(AVStream *s, int pts_wrap_bits,
+                         unsigned int pts_num, unsigned int pts_den)
+{
+    avpriv_set_pts_info(s, pts_wrap_bits, pts_num, pts_den);
+}
+
+
+void tt_read_frame_flush(AVFormatContext *s)
+{
+    ff_read_frame_flush(s);
+}
