@@ -77,6 +77,8 @@ typedef struct FLVContext {
     int64_t last_ts;
     int64_t time_offset;
     int64_t time_pos;
+
+    int  check_corrupt_packet;
 } FLVContext;
 
 /* AMF date type */
@@ -1336,6 +1338,9 @@ retry_duration:
         stream_type == FLV_STREAM_TYPE_SUBTITLE ||
         stream_type == FLV_STREAM_TYPE_DATA)
         pkt->flags |= AV_PKT_FLAG_KEY;
+    // packet reading corrupt   
+    if (flv->check_corrupt_packet && (pkt->flags & AV_PKT_FLAG_CORRUPT))
+        return ret;
 
 leave:
     last = avio_rb32(s->pb);
@@ -1375,6 +1380,7 @@ static const AVOption options[] = {
     { "flv_full_metadata", "Dump full metadata of the onMetadata", OFFSET(dump_full_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
+    { "check_corrupt_packet", "Enable check_corrupt_packet", OFFSET(check_corrupt_packet), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, VD },
     { NULL }
 };
 
