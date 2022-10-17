@@ -45,6 +45,7 @@ TT_DUMMY_PROTOCOL(quic);
 TT_DUMMY_PROTOCOL(live);
 TT_DUMMY_PROTOCOL(httpx);
 TT_DUMMY_PROTOCOL(thirdparty);
+TT_DUMMY_PROTOCOL(hlsproxy);
 TT_DUMMY_PROTOCOL(memorydatasource);
 
 int tt_register_protocol(URLProtocol *prot, int protocol_size)
@@ -64,6 +65,8 @@ int tt_register_protocol(URLProtocol *prot, int protocol_size)
             memcpy(&ff_live_protocol, prot, protocol_size);
         } else if (strcmp(prot->name, "httpx") == 0) {
             memcpy(&ff_httpx_protocol, prot, protocol_size);
+        } else if (strcmp(prot->name, "hlsproxy") == 0) {
+            memcpy(&ff_hlsproxy_protocol, prot, protocol_size);
         } else if (strcmp(prot->name, "memorydatasource") == 0) {
             memcpy(&ff_memorydatasource_protocol, prot, protocol_size);
         } else {

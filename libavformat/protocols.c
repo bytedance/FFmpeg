@@ -82,6 +82,7 @@ extern const URLProtocol ff_libzmq_protocol;
 // External protocols register by tt_register_protocol
 extern const URLProtocol ff_mem_protocol;
 extern const URLProtocol ff_mdl_protocol;
+extern const URLProtocol ff_hlsproxy_protocol;
 extern const URLProtocol ff_live_protocol;
 extern const URLProtocol ff_quic_protocol;
 extern const URLProtocol ff_httpx_protocol;
