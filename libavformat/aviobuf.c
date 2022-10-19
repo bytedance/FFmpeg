@@ -384,6 +384,13 @@ int avio_feof(AVIOContext *s)
     return s->eof_reached;
 }
 
+int avio_feof_nonecheck(AVIOContext *s)
+{
+    if(!s)
+        return 0;
+    return s->eof_reached;
+}
+
 int avio_close_autorange(AVIOContext *s)
 {
     if (!s)

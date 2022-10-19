@@ -588,6 +588,13 @@ int64_t avio_recved(AVIOContext *s);
 int avio_feof(AVIOContext *s);
 
 /**
+ * Similar to avio_feof() but no need network request when feof.
+ *  
+ * @return non zero if and only if at end of file or a read error happened when reading.
+ */
+int avio_feof_nonecheck(AVIOContext *s);
+
+/**
 * Close auto range
 * @return 0 for success
 */
