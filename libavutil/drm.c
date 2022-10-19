@@ -22,7 +22,9 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 
+#include "drm.h"
 #include "ttexport.h"
 
 typedef struct DrmCtx {
@@ -42,4 +44,32 @@ void tt_register_drm(tt_drm_open open, tt_drm_decrypt decrypt, tt_drm_close clos
     g_drm.open = open;
     g_drm.decrypt = decrypt;
     g_drm.close = close;
+}
+
+static int av_drm_support() {
+    if (g_drm.open == NULL || g_drm.decrypt == NULL || g_drm.close == NULL) {
+        return 0;
+    }
+    return 1;
+}
+
+int ff_drm_open(void *handle, const char *kid) {
+    if (av_drm_support()) {
+        return g_drm.open(handle, kid);
+    }
+    return -1;
+}
+
+int ff_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst) {
+    if (av_drm_support()) {
+        return g_drm.decrypt(handle, src, count, iv, dst);
+    }
+    return -1;
+}
+
+void ff_drm_close(void *handle)
+{
+    if (av_drm_support()) {
+        return g_drm.close(handle);
+    }
 }

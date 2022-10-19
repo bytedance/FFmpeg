@@ -126,6 +126,7 @@ typedef struct MOVEncryptionIndex {
 
 typedef struct MOVFragmentStreamInfo {
     int id;
+    unsigned stsd_id;
     int64_t sidx_pts;
     int64_t first_tfra_pts;
     int64_t tfdt_dts;
@@ -189,6 +190,7 @@ typedef struct MOVStreamContext {
     int time_scale;
     int64_t time_offset;  ///< time offset of the edit list entries
     int64_t min_corrected_pts;  ///< minimum Composition time shown by the edits excluding empty edits.
+    int test_sample;
     int current_sample;
     int64_t current_index;
     MOVIndexRange* index_ranges;
@@ -297,6 +299,30 @@ typedef struct MOVContext {
     int32_t movie_display_matrix[3][3]; ///< display matrix from mvhd
     int have_read_mfra_size;
     uint32_t mfra_size;
+    int prefer_nearest_sample;
+    int prefer_nearest_max_pos_offset;
+    int disable_short_seek;
+    int enable_drm;
+    int drm_downgrade;
+    int64_t drm_aptr;
+    void *drm_ctx;
+    int ignore_mdat;
+    int individually_eof;
+    int handle_header_error;
+    int use_senc_for;
+    int retry_eof;
+    int adjust_seek_timestamp;
+
+    char *mdl_file_key;
+    int enable_video_timestamp_monotonic;
+    int adjust_fragment_position;
+    int enable_mp4_check;
+    int64_t last_test_sample_pos;
+    int64_t max_pos_back_diff;
+    int64_t audio_seek_pts;
+    int need_found_moof;
+    int found_moof;
+    int is_fmp4;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);

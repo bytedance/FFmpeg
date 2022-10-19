@@ -21,6 +21,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * 
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include <inttypes.h>
@@ -47,6 +50,7 @@
 #include "libavutil/stereo3d.h"
 #include "libavutil/timecode.h"
 #include "libavutil/dovi_meta.h"
+#include "libavutil/mdl_info_wrapper.h"
 #include "libavcodec/ac3tab.h"
 #include "libavcodec/flac.h"
 #include "libavcodec/mpegaudiodecheader.h"
@@ -60,6 +64,7 @@
 #include "id3v1.h"
 #include "mov_chan.h"
 #include "replaygain.h"
+#include "libavutil/drm.h"
 
 #if CONFIG_ZLIB
 #include <zlib.h>
@@ -76,6 +81,8 @@ typedef struct MOVParseTableEntry {
 
 static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom);
 static int mov_read_mfra(MOVContext *c, AVIOContext *f);
+static int mov_parse_auxiliary_info(MOVContext *c, MOVStreamContext *sc, AVIOContext *pb, MOVEncryptionIndex *encryption_index);
+static int get_current_encryption_info(MOVContext *c, MOVEncryptionIndex **encryption_index, MOVStreamContext **sc);
 static int64_t add_ctts_entry(MOVStts** ctts_data, unsigned int* ctts_count, unsigned int* allocated_size,
                               int count, int duration);
 
@@ -1266,12 +1273,14 @@ static int search_frag_moof_offset(MOVFragmentIndex *frag_index, int64_t offset)
 
 static int64_t get_stream_info_time(MOVFragmentStreamInfo * frag_stream_info)
 {
-    av_assert0(frag_stream_info);
-    if (frag_stream_info->sidx_pts != AV_NOPTS_VALUE)
-        return frag_stream_info->sidx_pts;
-    if (frag_stream_info->first_tfra_pts != AV_NOPTS_VALUE)
-        return frag_stream_info->first_tfra_pts;
-    return frag_stream_info->tfdt_dts;
+    if (frag_stream_info) {
+        if (frag_stream_info->sidx_pts != AV_NOPTS_VALUE)
+            return frag_stream_info->sidx_pts;
+        if (frag_stream_info->first_tfra_pts != AV_NOPTS_VALUE)
+            return frag_stream_info->first_tfra_pts;
+        return frag_stream_info->tfdt_dts;
+    }
+    return AV_NOPTS_VALUE;
 }
 
 static int64_t get_frag_time(MOVFragmentIndex *frag_index,
@@ -1408,6 +1417,8 @@ static void fix_frag_index_entries(MOVFragmentIndex *frag_index, int index,
 
 static int mov_read_moof(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
+    MOVFragmentStreamInfo *frag_stream_info = NULL;
+    int ret = 0;
     // Set by mov_read_tfhd(). mov_read_trun() will reject files missing tfhd.
     c->fragment.found_tfhd = 0;
 
@@ -1429,7 +1440,26 @@ static int mov_read_moof(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     c->fragment.moof_offset = c->fragment.implicit_offset = avio_tell(pb) - 8;
     av_log(c->fc, AV_LOG_TRACE, "moof offset %"PRIx64"\n", c->fragment.moof_offset);
     c->frag_index.current = update_frag_index(c, c->fragment.moof_offset);
-    return mov_read_default(c, pb, atom);
+    ret = mov_read_default(c, pb, atom);
+    if (ret < 0) {
+        return ret;
+    }
+    frag_stream_info = get_current_frag_stream_info(&c->frag_index);
+    if (frag_stream_info) {
+        frag_stream_info->stsd_id = c->fragment.stsd_id;
+        if (c->use_senc_for && frag_stream_info->encryption_index) {
+            MOVEncryptionIndex *encryption_index = NULL;
+            MOVStreamContext *sc = NULL;
+            get_current_encryption_info(c, &encryption_index, &sc);
+            if (encryption_index &&
+                encryption_index->auxiliary_info_sample_count &&
+                encryption_index->auxiliary_offsets_count) {
+                return mov_parse_auxiliary_info(c, sc, pb, encryption_index);
+            }
+        }
+    }
+    c->found_moof = 1;
+    return 0;
 }
 
 static void mov_metadata_creation_time(AVDictionary **metadata, int64_t time, void *logctx)
@@ -3447,6 +3477,21 @@ static void mov_estimate_video_delay(MOVContext *c, AVStream* st)
     }
 }
 
+static void mov_test_sample_inc(MOVStreamContext *sc)
+{
+    sc->test_sample++;
+}
+
+static void mov_test_sample_dec(MOVStreamContext *sc)
+{
+    sc->test_sample--;
+}
+
+static void mov_test_sample_set(MOVStreamContext *sc, int test_sample)
+{
+    sc->test_sample = test_sample;
+}
+
 static void mov_current_sample_inc(MOVStreamContext *sc)
 {
     sc->current_sample++;
@@ -3701,7 +3746,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
                         frame_duration_buffer[num_discarded_begin - 1] = frame_duration;
 
                         // Increment skip_samples for the first non-zero audio edit list
-                        if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
+                        if ((!mov->enable_video_timestamp_monotonic || st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) &&
                             first_non_zero_audio_edit > 0 && st->codecpar->codec_id != AV_CODEC_ID_VORBIS) {
                             st->internal->skip_samples += frame_duration;
                         }
@@ -4340,6 +4385,8 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (ret < 0)
             return ret;
     }
+
+    c->is_fmp4 = (sc->stts_count == 0);
 
     switch (st->codecpar->codec_id) {
 #if CONFIG_H261_DECODER
@@ -5152,7 +5199,10 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         pts += duration;
     }
 
-    st->duration = sc->track_end = pts;
+    // top level sidx or first ref 0 sidx
+    if (sc->has_sidx == 0) {
+        st->duration = sc->track_end = pts;
+    }
 
     sc->has_sidx = 1;
 
@@ -5194,9 +5244,11 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             if (!sc->has_sidx) {
                 st->duration = sc->track_end = av_rescale(ref_st->duration, sc->time_scale, ref_sc->time_scale);
             }
+            if (st->codecpar && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                c->need_found_moof = 1;
+            }
         }
-
-        c->frag_index.complete = 1;
+        c->frag_index.complete = (c->fc->nb_streams == 1 || offset == avio_size(pb));
     }
 
     return 0;
@@ -5260,10 +5312,14 @@ static int mov_read_cmov(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         goto free_and_return;
 
     ret = AVERROR_INVALIDDATA;
-    if (uncompress (moov_data, (uLongf *) &moov_len, (const Bytef *)cmov_data, cmov_len) != Z_OK)
+    if (uncompress (moov_data, (uLongf *) &moov_len, (const Bytef *)cmov_data, cmov_len) != Z_OK) {
+        av_log(c->fc, AV_LOG_ERROR, "uncompress failed");
         goto free_and_return;
-    if (ffio_init_context(&ctx, moov_data, moov_len, 0, NULL, NULL, NULL, NULL) != 0)
+    }
+    if (ffio_init_context(&ctx, moov_data, moov_len, 0, NULL, NULL, NULL, NULL) != 0) {
+        av_log(c->fc, AV_LOG_ERROR, "init io context failed");
         goto free_and_return;
+    }
     ctx.seekable = AVIO_SEEKABLE_NORMAL;
     atom.type = MKTAG('m','o','o','v');
     atom.size = moov_len;
@@ -6228,7 +6284,11 @@ finish:
  */
 static int mov_try_read_block(AVIOContext *pb, size_t size, uint8_t **data)
 {
-    const unsigned int block_size = 1024 * 1024;
+    // Note!!!
+    // each saiz box malloc 1M, 1h duration + 5s fragment malloc 720M, easy to cause OOM
+    // block_size 1M change to 1K
+    // const unsigned int block_size = 1024 * 1024;
+    const unsigned int block_size = 1024;
     uint8_t *buffer = NULL;
     unsigned int alloc_size = 0, offset = 0;
     while (offset < size) {
@@ -6318,7 +6378,7 @@ static int mov_read_saiz(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         }
     }
 
-    if (encryption_index->auxiliary_offsets_count) {
+    if ((!c->use_senc_for || c->frag_index.nb_items == 0) && encryption_index->auxiliary_offsets_count) {
         return mov_parse_auxiliary_info(c, sc, pb, encryption_index);
     }
 
@@ -6413,7 +6473,7 @@ static int mov_read_saio(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     encryption_index->auxiliary_offsets_count = entry_count;
 
-    if (encryption_index->auxiliary_info_sample_count) {
+    if ((!c->use_senc_for || c->frag_index.nb_items == 0) && encryption_index->auxiliary_info_sample_count) {
         return mov_parse_auxiliary_info(c, sc, pb, encryption_index);
     }
 
@@ -6628,6 +6688,9 @@ static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         }
     }
 
+    if (is_protected && c->enable_drm) {
+        c->drm_ctx = (void *) (intptr_t) c->drm_aptr;
+    }
     return 0;
 }
 
@@ -6664,6 +6727,58 @@ static int mov_read_dfla(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (!last)
         av_log(c->fc, AV_LOG_WARNING, "non-STREAMINFO FLACMetadataBlock(s) ignored\n");
+
+    return 0;
+}
+
+static int drm_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *sample, uint8_t *input, int size)
+{
+    int i, ret;
+
+    if (sample->scheme != MKBETAG('c','e','n','c') || sample->crypt_byte_block != 0 || sample->skip_byte_block != 0) {
+        av_log(c->fc, AV_LOG_ERROR, "Only the 'cenc' encryption scheme is supported\n");
+        return AVERROR_PATCHWELCOME;
+    }
+
+    if (!c->drm_ctx) {
+        av_error(c->fc, AVERROR_DRM_DECRYPT_FAILED, "drm ctx is null\n");
+        return AVERROR_DRM_DECRYPT_FAILED;
+    }
+
+    if (!sample->subsample_count) {
+        /* decrypt the whole packet */
+        ret = ff_drm_decrypt(c->drm_ctx, input, size, sample->iv, input);
+        if (ret != 0) {
+            av_error(c->fc, AVERROR_DRM_DECRYPT_FAILED, "failed to drm decrypt whole packet, ret:%d\n", ret);
+            return AVERROR_DRM_DECRYPT_FAILED;
+        }
+        return 0;
+    }
+
+    for (i = 0; i < sample->subsample_count; i++) {
+        if (sample->subsamples[i].bytes_of_clear_data + sample->subsamples[i].bytes_of_protected_data > size) {
+            av_log(c->fc, AV_LOG_ERROR, "subsample size exceeds the packet size left\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        /* skip the clear bytes */
+        input += sample->subsamples[i].bytes_of_clear_data;
+        size -= sample->subsamples[i].bytes_of_clear_data;
+
+        /* decrypt the encrypted bytes */
+        ret = ff_drm_decrypt(c->drm_ctx, input, sample->subsamples[i].bytes_of_protected_data, sample->iv, input);
+        if (ret != 0) {
+            av_error(c->fc, AVERROR_DRM_DECRYPT_FAILED, "failed to drm decrypt subsample, ret:%d\n", ret);
+            return AVERROR_DRM_DECRYPT_FAILED;
+        }
+        input += sample->subsamples[i].bytes_of_protected_data;
+        size -= sample->subsamples[i].bytes_of_protected_data;
+    }
+
+    if (size > 0) {
+        av_log(c->fc, AV_LOG_ERROR, "leftover packet bytes after subsample processing\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     return 0;
 }
@@ -6769,6 +6884,18 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
             return AVERROR_INVALIDDATA;
         }
 
+        if (mov->drm_ctx) {
+            ret = drm_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
+            if (mov->drm_downgrade == 0 || ret != AVERROR_DRM_DECRYPT_FAILED) {
+                return ret;
+            } else {
+                if (mov->drm_aptr == 0) {
+                    ff_drm_close(mov->drm_ctx);
+                    av_freep(&mov->drm_ctx);
+                }
+                mov->drm_ctx = NULL;
+            }
+        }
         if (mov->decryption_key) {
             return cenc_decrypt(mov, sc, encrypted_sample, pkt->data, pkt->size);
         } else {
@@ -6996,6 +7123,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('d','v','c','1'), mov_read_dvc1 },
 { MKTAG('s','b','g','p'), mov_read_sbgp },
 { MKTAG('h','v','c','C'), mov_read_glbl },
+{ MKTAG('b','v','2','C'), mov_read_glbl },
 { MKTAG('u','u','i','d'), mov_read_uuid },
 { MKTAG('C','i','n', 0x8e), mov_read_targa_y216 },
 { MKTAG('f','r','e','e'), mov_read_free },
@@ -7119,11 +7247,24 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 c->atom_depth --;
                 return err;
             }
-            if (c->found_moov && c->found_mdat && a.size <= INT64_MAX - start_pos &&
+            if (a.type == MKTAG('m','o','o','v') && c->ignore_mdat && !c->is_fmp4) {
+                c->ignore_mdat = 0;
+                c->atom_depth --;
+                return 0;
+            }
+            if (c->found_moov && (c->found_mdat || (c->ignore_mdat && c->frag_index.complete && (!c->need_found_moof || c->found_moof))) &&
+                a.size <= INT64_MAX - start_pos &&
                 ((!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete) ||
                  start_pos + a.size == avio_size(pb))) {
                 if (!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete)
                     c->next_root_atom = start_pos + a.size;
+                if (!c->found_mdat && c->ignore_mdat && c->need_found_moof && c->found_moof) {
+                    int index = search_frag_moof_offset(&c->frag_index, c->fragment.moof_offset);
+                    if (index + 1 < c->frag_index.nb_items) {
+                        c->next_root_atom = c->frag_index.item[index + 1].moof_offset;
+                    }
+                }    
+                c->ignore_mdat = 0;
                 c->atom_depth --;
                 return 0;
             }
@@ -7495,6 +7636,12 @@ static int mov_read_close(AVFormatContext *s)
 
     av_freep(&mov->aes_decrypt);
     av_freep(&mov->chapter_tracks);
+    av_freep(&mov->mdl_file_key);
+    if (mov->drm_aptr == 0) {
+        ff_drm_close(mov->drm_ctx);
+        av_freep(&mov->drm_ctx);
+    }
+    mov->drm_ctx = NULL;
 
     return 0;
 }
@@ -7638,6 +7785,7 @@ static int mov_read_header(AVFormatContext *s)
 {
     MOVContext *mov = s->priv_data;
     AVIOContext *pb = s->pb;
+    uint8_t *val = NULL;
     int j, err;
     MOVAtom atom = { AV_RL32("root") };
     int i;
@@ -7650,6 +7798,7 @@ static int mov_read_header(AVFormatContext *s)
 
     mov->fc = s;
     mov->trak_index = -1;
+    mov->mdl_file_key = NULL;
     /* .mov and .mp4 aren't streamable anyway (only progressive download if moov is before mdat) */
     if (pb->seekable & AVIO_SEEKABLE_NORMAL)
         atom.size = avio_size(pb);
@@ -7670,6 +7819,14 @@ static int mov_read_header(AVFormatContext *s)
         err = AVERROR_INVALIDDATA;
         goto fail;
     }
+
+    if (pb->error != 0 && mov->handle_header_error) {
+        av_log(s, AV_LOG_ERROR, "mov_read_header pb error:%d", pb->error);
+        mov_read_close(s);
+        err = pb->error;
+        goto fail;
+    }
+
     av_log(mov->fc, AV_LOG_TRACE, "on_parse_exit_offset=%"PRId64"\n", avio_tell(pb));
 
     if (pb->seekable & AVIO_SEEKABLE_NORMAL) {
@@ -7820,23 +7977,21 @@ static int mov_read_header(AVFormatContext *s)
 
                 sc->mastering = NULL;
             }
-            if (sc->coll) {
-                err = av_stream_add_side_data(st, AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
-                                              (uint8_t *)sc->coll,
-                                              sc->coll_size);
-                if (err < 0)
-                    goto fail;
-
-                sc->coll = NULL;
-            }
             break;
         }
     }
-    ff_configure_buffers_for_index(s, AV_TIME_BASE);
+
+    if (!mov->prefer_nearest_sample && !mov->disable_short_seek)
+        ff_configure_buffers_for_index(s, AV_TIME_BASE);
 
     for (i = 0; i < mov->frag_index.nb_items; i++)
         if (mov->frag_index.item[i].moof_offset <= mov->fragment.moof_offset)
             mov->frag_index.item[i].headers_read = 1;
+
+    if (av_opt_get(pb, "mdl_file_key", AV_OPT_SEARCH_CHILDREN, &val) >= 0) {
+        mov->mdl_file_key = av_strdup((char *) val);
+        av_freep(&val);
+    }
 
     return 0;
 fail:
@@ -7844,36 +7999,85 @@ fail:
     return err;
 }
 
-static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
+enum FindSampleMode {
+    CURRENT_SAMPLE_MODE,
+    TEST_SAMPLE_MODE,
+};
+
+#define DEFAULT_PREFER_NEAREST_MAX_POS_OFFSET 1048576
+static AVIndexEntry *mov_find_next_sample2(AVFormatContext *s, AVStream **st, enum FindSampleMode mode)
 {
+    MOVContext *mov = s->priv_data;
     AVIndexEntry *sample = NULL;
+    AVIndexEntry *best_dts_sample = NULL;
+    AVIndexEntry *best_pos_sample = NULL;
+    AVStream *best_dts_stream = NULL;
+    AVStream *best_pos_stream = NULL;
     int64_t best_dts = INT64_MAX;
     int i;
+    int64_t pos = avio_tell(s->pb);
+    int64_t prefer_nearest_max_pos_offset = (mode == CURRENT_SAMPLE_MODE) ? mov->prefer_nearest_max_pos_offset : DEFAULT_PREFER_NEAREST_MAX_POS_OFFSET;
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *avst = s->streams[i];
         MOVStreamContext *msc = avst->priv_data;
-        if (msc->pb && msc->current_sample < avst->nb_index_entries) {
-            AVIndexEntry *current_sample = &avst->index_entries[msc->current_sample];
+        int sample_index = (mode == CURRENT_SAMPLE_MODE) ? msc->current_sample : msc->test_sample;
+        int prefer_nearest_sample = (mode == CURRENT_SAMPLE_MODE) ? mov->prefer_nearest_sample : 0;
+        if (msc->pb && sample_index < avst->nb_index_entries) {
+            AVIndexEntry *current_sample = &avst->index_entries[sample_index];
             int64_t dts = av_rescale(current_sample->timestamp, AV_TIME_BASE, msc->time_scale);
-            av_log(s, AV_LOG_TRACE, "stream %d, sample %d, dts %"PRId64"\n", i, msc->current_sample, dts);
-            if (!sample || (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL) && current_sample->pos < sample->pos) ||
+            av_log(s, AV_LOG_TRACE, "stream %d, sample %d, dts %"PRId64",  pos %"PRId64"\n", i, msc->current_sample, dts, current_sample->pos);
+            if (!best_dts_sample || (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL) && current_sample->pos < best_dts_sample->pos) ||
                 ((s->pb->seekable & AVIO_SEEKABLE_NORMAL) &&
                  ((msc->pb != s->pb && dts < best_dts) || (msc->pb == s->pb && dts != AV_NOPTS_VALUE &&
-                 ((FFABS(best_dts - dts) <= AV_TIME_BASE && current_sample->pos < sample->pos) ||
+                 ((FFABS(best_dts - dts) <= AV_TIME_BASE && current_sample->pos < best_dts_sample->pos) ||
                   (FFABS(best_dts - dts) > AV_TIME_BASE && dts < best_dts)))))) {
-                sample = current_sample;
+                /* find best dts sample */
+                best_dts_sample = current_sample;
                 best_dts = dts;
-                *st = avst;
+                best_dts_stream = avst;
+            }
+            if (prefer_nearest_sample &&
+                current_sample->pos >= pos &&
+                (!best_pos_sample || current_sample->pos < best_pos_sample->pos)) {
+                /* find nearest sample to avoid seek around */
+                best_pos_sample = current_sample;
+                best_pos_stream = avst;
             }
         }
     }
+
+    if (best_dts_sample && best_dts_sample != best_pos_sample &&
+        (!best_pos_sample ||
+         best_dts_sample->pos < pos ||
+         best_dts_sample->pos > pos + prefer_nearest_max_pos_offset)) {
+        sample = best_dts_sample;
+        *st = best_dts_stream;
+    } else {
+        sample = best_pos_sample;
+        *st = best_pos_stream;
+    }
+
     return sample;
 }
 
-static int should_retry(AVIOContext *pb, int error_code) {
-    if (error_code == AVERROR_EOF || avio_feof(pb))
-        return 0;
+static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
+{
+    return mov_find_next_sample2(s, st, CURRENT_SAMPLE_MODE);
+}
 
+static int avio_interrupt_callback(AVIOContext *pb) {
+    if(!pb || !pb->opaque) {
+        return 0;
+    }
+    URLContext *cc = pb->opaque;
+    return ff_check_interrupt(&cc->interrupt_callback);
+}
+
+static int should_retry(AVIOContext *pb, int error_code, int retry_eof) {
+    int ret = retry_eof ? avio_interrupt_callback(pb) : 0;
+    if (!ret && (error_code == AVERROR_EOF || avio_feof(pb))) {
+        return 0;
+    }
     return 1;
 }
 
@@ -7961,12 +8165,24 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     MOVContext *mov = s->priv_data;
     MOVStreamContext *sc;
-    AVIndexEntry *sample;
+    AVIndexEntry *sample, *test_sample;
     AVStream *st = NULL;
     int64_t current_index;
     int ret;
     mov->fc = s;
+    int64_t end_off = 0;
+    uint8_t *val = NULL;
  retry:
+    if (mov->enable_mp4_check) {
+        test_sample = mov_find_next_sample2(s, &st, TEST_SAMPLE_MODE);
+        if (test_sample) {
+            mov->max_pos_back_diff = mov->last_test_sample_pos > 0 ? FFMAX(mov->max_pos_back_diff, mov->last_test_sample_pos - test_sample->pos) : 0;
+            mov->last_test_sample_pos = test_sample->pos;
+            av_log(s, AV_LOG_VERBOSE, "test sample diff:%"PRId64"\n", mov->max_pos_back_diff);
+            sc = st->priv_data;
+            mov_test_sample_inc(sc);
+        }
+    }
     sample = mov_find_next_sample(s, &st);
     if (!sample || (mov->next_root_atom && sample->pos > mov->next_root_atom)) {
         if (!mov->next_root_atom)
@@ -7988,9 +8204,10 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (st->discard != AVDISCARD_ALL) {
         int64_t ret64 = avio_seek(sc->pb, sample->pos, SEEK_SET);
         if (ret64 != sample->pos) {
-            av_log(mov->fc, AV_LOG_ERROR, "stream %d, offset 0x%"PRIx64": partial file\n",
-                   sc->ffindex, sample->pos);
-            if (should_retry(sc->pb, ret64)) {
+            av_log(mov->fc, AV_LOG_ERROR, "stream %d, offset 0x%"PRIx64": partial file, retry : %d\n",
+                   sc->ffindex, sample->pos, mov->retry_eof);
+            if (should_retry(sc->pb, ret64, mov->retry_eof)) {
+                av_log(mov->fc, AV_LOG_DEBUG,"should retry");
                 mov_current_sample_dec(sc);
             }
             return AVERROR_INVALIDDATA;
@@ -8001,12 +8218,24 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
             goto retry;
         }
 
+        if (av_opt_get(sc->pb, "end_offset", AV_OPT_SEARCH_CHILDREN, &val) >= 0) {
+            end_off = strtoull(val, NULL, 10);
+            av_freep(&val);
+        }
+
         if (st->codecpar->codec_id == AV_CODEC_ID_EIA_608 && sample->size > 8)
             ret = get_eia608_packet(sc->pb, pkt, sample->size);
         else
             ret = av_get_packet(sc->pb, pkt, sample->size);
+
+        if (mov->retry_eof && pkt->size < sample->size) {
+            av_log(mov->fc, AV_LOG_WARNING, "pkt size mismatch : pkt :%d, sample: %d", pkt->size, sample->size);
+            av_packet_unref(pkt);
+            ret = AVERROR_INVALIDDATA;
+        }    
         if (ret < 0) {
-            if (should_retry(sc->pb, ret)) {
+            if (should_retry(sc->pb, ret, mov->retry_eof)) {
+                av_log(mov->fc, AV_LOG_DEBUG, "should retry");
                 mov_current_sample_dec(sc);
             }
             return ret;
@@ -8100,6 +8329,16 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
         return ret;
     }
 
+    if (sc->current_sample == st->nb_index_entries &&
+       (!mov->next_root_atom ||
+       (mov->individually_eof && mov->frag_index.complete && mov->frag_index.current + 1 == mov->frag_index.nb_items))) {
+        pkt->flags |= AV_PKT_FLAG_EOF;
+    }
+
+    if (end_off > 0 && sample->pos + sample->size >= end_off) {
+        pkt->flags |= AV_PKT_FLAG_EOR;
+    }
+
     return 0;
 }
 
@@ -8111,6 +8350,11 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     if (!mov->frag_index.complete)
         return 0;
 
+    if (st && st->id >= 0) {
+        MOVStreamContext *sc = st->priv_data;
+        timestamp += (sc ? sc->time_offset : 0);
+    }
+
     index = search_frag_timestamp(&mov->frag_index, st, timestamp);
     if (index < 0)
         index = 0;
@@ -8118,6 +8362,7 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
         return mov_switch_root(s, -1, index);
     if (index + 1 < mov->frag_index.nb_items)
         mov->next_root_atom = mov->frag_index.item[index + 1].moof_offset;
+    mov->frag_index.current = index;
 
     return 0;
 }
@@ -8138,11 +8383,17 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
 
     sample = av_index_search_timestamp(st, timestamp, flags);
     av_log(s, AV_LOG_TRACE, "stream %d, timestamp %"PRId64", sample %d\n", st->index, timestamp, sample);
-    if (sample < 0 && st->nb_index_entries && timestamp < st->index_entries[0].timestamp)
-        sample = 0;
-    if (sample < 0) /* not sure what to do */
+    if (sample < 0 && st->nb_index_entries && timestamp <= st->index_entries[0].timestamp) {
+         sample = 0;
+         while (sample < st->nb_index_entries && !(st->index_entries[sample].flags & AVINDEX_KEYFRAME))
+            sample += 1;
+    }
+    if (sample < 0) /* not sure what to do */ {
+        av_log(s, AV_LOG_ERROR, "no sample to seek");
         return AVERROR_INVALIDDATA;
+    }
     mov_current_sample_set(sc, sample);
+    mov_test_sample_set(sc, sample);
     av_log(s, AV_LOG_TRACE, "stream %d, found sample %d\n", st->index, sc->current_sample);
     /* adjust ctts index */
     if (sc->ctts_data) {
@@ -8195,31 +8446,55 @@ static int64_t mov_get_skip_samples(AVStream *st, int sample)
 static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_time, int flags)
 {
     MOVContext *mc = s->priv_data;
+    int current_frag_index;
     AVStream *st;
     int sample;
     int i;
 
-    if (stream_index >= s->nb_streams)
+    if (stream_index >= s->nb_streams) {
+        av_log(s, AV_LOG_ERROR, "seek stream index invalid: %d", stream_index);
         return AVERROR_INVALIDDATA;
+    }
 
+    mc->last_test_sample_pos = 0;
+    current_frag_index = mc->frag_index.current;
     st = s->streams[stream_index];
     sample = mov_seek_stream(s, st, sample_time, flags);
-    if (sample < 0)
+    if (sample < 0) {
+        mc->frag_index.current = current_frag_index;
         return sample;
+    }
 
     if (mc->seek_individually) {
         /* adjust seek timestamp to found sample timestamp */
+        MOVStreamContext *sc = st->priv_data;
         int64_t seek_timestamp = st->index_entries[sample].timestamp;
         st->internal->skip_samples = mov_get_skip_samples(st, sample);
+        if (mc->adjust_seek_timestamp && sc->ctts_data && sc->ctts_index < sc->ctts_count) {
+            // convert video key-frame dts to pts
+            seek_timestamp += (sc->dts_shift + sc->ctts_data[sc->ctts_index].duration);
+            av_log(s, AV_LOG_VERBOSE, "adjust seek timestamp to:%"PRId64"\n", seek_timestamp);
+        }
 
         for (i = 0; i < s->nb_streams; i++) {
             int64_t timestamp;
             st = s->streams[i];
+            sc = st->priv_data;
 
             if (stream_index == i)
                 continue;
-
-            timestamp = av_rescale_q(seek_timestamp, s->streams[stream_index]->time_base, st->time_base);
+            
+            /* 
+             *   when switch stream and old audio stream pts < video stream pts, new audio
+             *   stream should use old audio stream pts rather than old video stream pts to seek
+             */
+            if (st->codecpar && st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && mc->audio_seek_pts != AV_NOPTS_VALUE) {
+                timestamp = av_rescale(mc->audio_seek_pts, st->time_base.den, 1000 * (int64_t) st->time_base.num);
+                mc->audio_seek_pts = AV_NOPTS_VALUE;
+            } else {
+                timestamp = av_rescale_q(seek_timestamp, s->streams[stream_index]->time_base, st->time_base);
+            }
+            
             sample = mov_seek_stream(s, st, timestamp, flags);
             if (sample >= 0)
                 st->internal->skip_samples = mov_get_skip_samples(st, sample);
@@ -8230,6 +8505,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
             st = s->streams[i];
             sc = st->priv_data;
             mov_current_sample_set(sc, 0);
+            mov_test_sample_set(sc, 0);
         }
         while (1) {
             MOVStreamContext *sc;
@@ -8240,9 +8516,242 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
             if (sc->ffindex == stream_index && sc->current_sample == sample)
                 break;
             mov_current_sample_inc(sc);
+            mov_test_sample_inc(sc);
         }
     }
     return 0;
+}
+
+static int64_t mov_read_timestamp(AVFormatContext *s, int stream_index, int sample_index) {
+    AVStream *st;
+    MOVStreamContext *sc;
+    int64_t pts, dts;
+    if (!s) {
+        return AV_NOPTS_VALUE;
+    }
+    if (stream_index < 0 || stream_index >= s->nb_streams) {
+        return AV_NOPTS_VALUE;
+    }
+    st = s->streams[stream_index];
+    sc = st->priv_data;
+    if (sample_index < 0 || sample_index >= st->nb_index_entries) {
+        return AV_NOPTS_VALUE;
+    }
+    dts = st->index_entries[sample_index].timestamp;
+    if (sc->ctts_data) {
+        int ctts_index = 0, time_sample = 0;
+        for (int i = 0; i < sc->ctts_count; i++) {
+            int next = time_sample + sc->ctts_data[i].count;
+            if (next > sample_index) {
+                ctts_index = i;
+                break;
+            }
+            time_sample = next;
+        }
+        pts = dts + sc->dts_shift + sc->ctts_data[ctts_index].duration;
+    } else {
+        pts = dts;
+    }
+    return pts;
+}
+
+static int mov_read_fragment_info(struct AVFormatContext *s, int stream_index, AVFragmentInfo **frag_infos, int *n_frag_infos)
+{
+    AVFragmentInfo *infos = NULL;
+    AVStream *st = NULL;
+    MOVContext *mov = NULL;
+    int nb = 0;
+    if (!s || !(mov = s->priv_data) || stream_index < 0 || stream_index >= (int) s->nb_streams) {
+        return AVERROR(EINVAL);
+    }
+    if (mov->frag_index.nb_items <= 0) {
+        // normal mp4
+        AVFragmentInfo *allocated_infos = NULL;
+        MOVStreamContext *sc = NULL;
+        unsigned int allocated_size = 0;
+        int ctts_index = 0, ctts_sample = 0;
+        st = s->streams[stream_index];
+        sc = st->priv_data;
+        nb++;
+        AVStream *ref_stream = NULL;
+        int ref_entry_index = 0;
+        if (st->codecpar && st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            int index = av_find_best_stream(s, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+            if (index != AVERROR_STREAM_NOT_FOUND && s->streams[index]->nb_index_entries > 0)
+                ref_stream = s->streams[index];
+        }
+        for (int i = 0; i < st->nb_index_entries; i++) {
+            if (st->index_entries[i].flags & AVINDEX_KEYFRAME) {
+                if (ref_stream) {
+                    if (st->index_entries[i].pos < ref_stream->index_entries[ref_entry_index].pos)
+                        goto next;
+                    ref_entry_index += 1;
+                    while (ref_entry_index < ref_stream->nb_index_entries) {
+                        if (ref_stream->index_entries[ref_entry_index].flags & AVINDEX_KEYFRAME)
+                            break;
+                        ref_entry_index += 1;
+                    }
+                }
+                allocated_infos = av_fast_realloc(infos, &allocated_size, sizeof(AVFragmentInfo) * (nb + 1));
+                if (!allocated_infos) {
+                    av_freep(&infos);
+                    return AVERROR(ENOMEM);
+                }
+                infos = allocated_infos;
+                if (!mov->adjust_fragment_position) {
+                    infos[nb].offset = st->index_entries[i].pos;
+                } else {
+                    // there are read holes on A/V mix mp4 for TTS, fragment position need adjust
+                    infos[nb].offset = i >= 1 ? st->index_entries[i - 1].pos + st->index_entries[i - 1].size : st->index_entries[i].pos;
+                }
+                infos[nb].timestamp = st->index_entries[i].timestamp;
+                if (sc->ctts_data && ctts_index < sc->ctts_count) {
+                    infos[nb].timestamp += (sc->dts_shift + sc->ctts_data[ctts_index].duration);
+                }
+                nb++;
+                if (ref_stream && ref_entry_index == ref_stream->nb_index_entries)
+                    break;
+            }
+next:
+            if (sc->ctts_data && ctts_index < sc->ctts_count) {
+                ctts_sample++;
+                if (ctts_index < sc->ctts_count && sc->ctts_data[ctts_index].count == ctts_sample) {
+                    ctts_index++;
+                    ctts_sample = 0;
+                }
+            }
+        }
+        if (infos) {
+            infos[0].offset = 0;
+            infos[0].timestamp = 0;
+            *frag_infos = infos;
+            *n_frag_infos = nb;
+        }
+    } else {
+        // fragment mp4
+        int id = -1;
+        if (!mov->frag_index.complete) {
+            return AVERROR(EINVAL);
+        }
+        if (s->nb_streams > 1) {
+            // TODO: support multi-streams fragment info
+            avpriv_request_sample(s, "do not support multi-streams fragment info\n");
+            return AVERROR_PATCHWELCOME;
+        }
+        st = s->streams[stream_index];
+        if (st && st->priv_data) {
+            MOVStreamContext *sc = st->priv_data;
+            if (sc->has_sidx) {
+                id = st->id;
+            }
+        }
+        nb = mov->frag_index.nb_items + 1;
+        infos = av_mallocz(sizeof(AVFragmentInfo) * nb);
+        if (!infos) {
+            return AVERROR(ENOMEM);
+        }
+        for (int i = 0; i < nb; i++) {
+            infos[i].offset = i > 0 ? mov->frag_index.item[i - 1].moof_offset : 0;
+            infos[i].timestamp = i > 0 ? get_frag_time(&mov->frag_index, i - 1, id) : 0;
+        }
+        *frag_infos = infos;
+        *n_frag_infos = nb;
+    }
+    return 0;
+}
+
+static int av_search_index_with_position(AVStream* stream, int64_t position, int flags) {
+    int a, b, m=0;
+    const AVIndexEntry *entries = stream->index_entries;
+    int nb_entries = stream->nb_index_entries;
+    a = -1;
+    b = nb_entries;
+    // Optimize appending index entries at the end.
+    if (b && entries[b - 1].pos < position) {
+        a = b - 1;
+    }
+    while (b - a > 1) {
+        m = (a + b) >> 1;
+
+        while ((entries[m].flags & AVINDEX_DISCARD_FRAME) && m < b && m < nb_entries - 1) {
+            m++;
+            if (m == b && entries[m].pos >= position) {
+                m = b - 1;
+                break;
+            }
+        }
+        if (entries[m].pos >= position) {
+            b = m;
+        } else if (entries[m].pos <= position) {
+            a = m;
+        } else {
+            break;
+        }
+    }
+    m = (flags & AVSEEK_FLAG_BACKWARD) ? a : b;
+
+    if (m == nb_entries)
+        return b-1;
+    return m;
+}
+
+static int64_t mov_get_timestamp_from_position(struct AVFormatContext *s, int64_t off, int stream_index, int flags) {
+    if (!s) {
+        return 0;
+    }
+    int cur_index = 0;
+    AVStream* st = s->streams[stream_index];
+    if (st->discard == AVDISCARD_ALL) {
+        return 0;
+    }
+    cur_index = av_search_index_with_position(st, off, flags);
+    if (cur_index < 0 || cur_index >= st->nb_index_entries) {
+        return 0;
+    }
+    int64_t sampleTime = st->index_entries[cur_index].timestamp;
+    sampleTime = wrap_timestamp(st, sampleTime);
+    sampleTime = (sampleTime == AV_NOPTS_VALUE) ? 0 : sampleTime * av_q2d(st->time_base) * 1000;
+    av_log(s, AV_LOG_DEBUG, "stream_index:%d, cur_index:%d, time:%"PRId64"\n", stream_index, cur_index, sampleTime);
+    return sampleTime;
+}
+
+static int64_t mov_read_cache_timestamp(struct AVFormatContext *s, int stream_index, int flags) {
+    MOVContext *c = NULL;
+    int64_t ret = -1, cur_ret = -1;
+    int64_t cur_off = -1, end_off = -1;
+    if (!s) {
+        return 0;
+    }
+    c = s->priv_data;
+    cur_off = avio_tell(s->pb);
+    end_off = mdl_info_get_int64_value(c->mdl_file_key, MDLCacheEndOffsetS64I, cur_off);
+    av_log(s, AV_LOG_DEBUG, "mdl file key:%s, cur off:%"PRId64", end off:%"PRId64"\n", c->mdl_file_key, cur_off, end_off);
+    if (end_off <= cur_off)
+        return 0;
+    if (stream_index >= (int)s->nb_streams) {
+        return 0;
+    } else if (stream_index < 0) {
+        for (int i = 0; i < s->nb_streams; i++) {
+            if (s->streams[i]->discard == AVDISCARD_ALL) {
+                continue;
+            }
+            cur_ret = mov_get_timestamp_from_position(s, end_off, i, flags) -
+                  mov_get_timestamp_from_position(s, cur_off, i, flags);
+            ret = ret < 0 ? cur_ret : FFMIN(ret, cur_ret);
+        }
+    } else {
+        ret = mov_get_timestamp_from_position(s, end_off, stream_index, flags) - 
+              mov_get_timestamp_from_position(s, cur_off, stream_index, flags);
+    }
+    av_log(s, AV_LOG_DEBUG, "cache time stamp:%"PRId64"\n", ret);
+    return ret;
+}
+
+static int mov_close_auto_range_read(AVFormatContext* s) {
+    if (!s) {
+        return -1;
+    }
+    return avio_close_autorange(s->pb);
 }
 
 #define OFFSET(x) offsetof(MOVContext, x)
@@ -8292,7 +8801,42 @@ static const AVOption mov_options[] = {
     { "decryption_key", "The media decryption key (hex)", OFFSET(decryption_key), AV_OPT_TYPE_BINARY, .flags = AV_OPT_FLAG_DECODING_PARAM },
     { "enable_drefs", "Enable external track support.", OFFSET(enable_drefs), AV_OPT_TYPE_BOOL,
         {.i64 = 0}, 0, 1, FLAGS },
-
+    { "prefer_nearest_sample", "mov demuxer: prefer pos nearest sample reduce seek", OFFSET(prefer_nearest_sample),
+        AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS },
+    {"prefer_nearest_max_pos_offset", "mov demuxer: prefer pos nearest sample reduce seek v&a max offset as same dts", OFFSET(prefer_nearest_max_pos_offset),
+	AV_OPT_TYPE_INT, {.i64 = DEFAULT_PREFER_NEAREST_MAX_POS_OFFSET}, 0, INT_MAX, FLAGS},
+    { "disable_short_seek", "disable short seek to avoid no new request when seek", OFFSET(disable_short_seek),
+        AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS },
+    { "enable_drm", "Enable drm", OFFSET(enable_drm),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = FLAGS },
+    { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade),
+        AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
+    { "drm_aptr", "Drm aptr", OFFSET(drm_aptr),
+        AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = FLAGS },
+    { "ignore_mdat", "ignore mdat", OFFSET(ignore_mdat),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "individually_eof", "individually eof", OFFSET(individually_eof),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "handle_header_error", "handle io error during read mov header", OFFSET(handle_header_error),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "use_senc_for", "use senc for encrypt fmp4", OFFSET(use_senc_for),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+	{ "retry_eof", "use for progressive mov seek retry", OFFSET(retry_eof),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "adjust_seek_timestamp", "adjust seek timestamp", OFFSET(adjust_seek_timestamp),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "mdl_file_key", "mdl file key", OFFSET(mdl_file_key),
+        AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, FLAGS },
+    { "enable_video_timestamp_monotonic", "enable video timestamp monotonic", OFFSET(enable_video_timestamp_monotonic),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "adjust_fragment_position", "adjust fragment position", OFFSET(adjust_fragment_position),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "enable_mp4_check", "enable mp4 check", OFFSET(enable_mp4_check),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "max_pos_back_diff", "max pos back diff", OFFSET(max_pos_back_diff),
+        AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, FLAGS },
+    { "audio_seek_pts", "audio seek pts", OFFSET(audio_seek_pts),
+        AV_OPT_TYPE_INT64, { .i64 = AV_NOPTS_VALUE }, INT64_MIN, INT64_MAX, FLAGS },
     { NULL },
 };
 
@@ -8314,5 +8858,9 @@ AVInputFormat ff_mov_demuxer = {
     .read_packet    = mov_read_packet,
     .read_close     = mov_read_close,
     .read_seek      = mov_read_seek,
+    .read_timestamp2 = mov_read_timestamp,
+    .read_fragment_info = mov_read_fragment_info,
+    .read_cache_timestamp = mov_read_cache_timestamp,
+    .close_auto_range_read = mov_close_auto_range_read,
     .flags          = AVFMT_NO_BYTE_SEEK | AVFMT_SEEK_TO_PTS,
 };

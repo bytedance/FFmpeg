@@ -24,6 +24,9 @@
 #ifndef AVUTIL_DRM_H
 #define AVUTIL_DRM_H
 
+int ff_drm_open(void *handle, const char *kid);
+int ff_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst);
+void ff_drm_close(void *handle);
 
 
 #endif /* AVUTIL_DRM_H */
