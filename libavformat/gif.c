@@ -97,6 +97,9 @@ static int gif_write_packet(AVFormatContext *s, AVPacket *new_pkt)
     GIFContext *gif = s->priv_data;
     AVIOContext *pb = s->pb;
     AVPacket *pkt = gif->prev_pkt;
+    AVDictionaryEntry *e = NULL;
+    unsigned char* ptr = NULL;
+    int len = 0;
 
     if (!gif->prev_pkt) {
         gif->prev_pkt = av_packet_alloc();
@@ -139,6 +142,24 @@ static int gif_write_packet(AVFormatContext *s, AVPacket *new_pkt)
             avio_w8(pb, 0x03); /* Length of Data Sub-Block */
             avio_w8(pb, 0x01);
             avio_wl16(pb, (uint16_t)gif->loop);
+            avio_w8(pb, 0x00); /* Data Sub-block Terminator */
+        }
+
+        e = av_dict_get(s->metadata, "comment", NULL, 0);
+        if(e && e->value){
+            ptr = e->value;
+            len = strlen(ptr);
+        }
+        if(len > 0){
+            avio_w8(pb, GIF_EXTENSION_INTRODUCER);
+            avio_w8(pb, GIF_COM_EXT_LABEL);
+            while(len > 0){
+                int size = FFMIN(255, len);
+                avio_w8(pb, (uint8_t)size);
+                avio_write(pb, ptr, size);
+                ptr += size;
+                len -= size;
+            }
             avio_w8(pb, 0x00); /* Data Sub-block Terminator */
         }
 
