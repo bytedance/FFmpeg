@@ -79,6 +79,8 @@ typedef struct FLVContext {
     int64_t time_pos;
 
     int  check_corrupt_packet;
+    int  skip_find_unnecessary_stream;
+    int  head_flags;
 } FLVContext;
 
 /* AMF date type */
@@ -172,8 +174,27 @@ static AVStream *create_stream(AVFormatContext *s, int codec_type)
                            && s->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE
                            && s->streams[1]->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE
                            && s->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_DATA
-                           && s->streams[1]->codecpar->codec_type != AVMEDIA_TYPE_DATA))
+                           && s->streams[1]->codecpar->codec_type != AVMEDIA_TYPE_DATA)) {
         s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+    } else {
+        av_log(s, AV_LOG_INFO, "Skip_find_unnecessary_stream = %d\n", flv->skip_find_unnecessary_stream);
+        if (flv->skip_find_unnecessary_stream) {
+            if (flv->head_flags == FLV_HEADER_FLAG_HASVIDEO // only video
+                && ((s->nb_streams == 1 && s->streams[0]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                    || (s->nb_streams == 2 && s->streams[1]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO))
+            ) {
+                s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+            }
+
+            if (flv->head_flags == FLV_HEADER_FLAG_HASAUDIO // only audio
+                && ((s->nb_streams == 1 && s->streams[0]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                    || (s->nb_streams == 2 && s->streams[1]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO))
+            ) {
+                s->ctx_flags &= ~AVFMTCTX_NOHEADER;
+            }
+        }
+    }
+
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
         st->codecpar->bit_rate = flv->audio_bit_rate;
         flv->missing_streams &= ~FLV_HEADER_FLAG_HASAUDIO;
@@ -782,6 +803,7 @@ static int flv_read_header(AVFormatContext *s)
 
     avio_skip(s->pb, 4);
     flags = avio_r8(s->pb);
+    flv->head_flags = flags;
 
     flv->missing_streams = flags & (FLV_HEADER_FLAG_HASVIDEO | FLV_HEADER_FLAG_HASAUDIO);
 
@@ -1381,6 +1403,7 @@ static const AVOption options[] = {
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "check_corrupt_packet", "Enable check_corrupt_packet", OFFSET(check_corrupt_packet), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, VD },
+    { "skip_find_unnecessary_stream", "Skip find unnecessary stream", OFFSET(skip_find_unnecessary_stream), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { NULL }
 };
 
