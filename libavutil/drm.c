@@ -53,21 +53,21 @@ static int av_drm_support() {
     return 1;
 }
 
-int ff_drm_open(void *handle, const char *kid) {
+int av_drm_open(void *handle, const char *kid) {
     if (av_drm_support()) {
         return g_drm.open(handle, kid);
     }
     return -1;
 }
 
-int ff_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst) {
+int av_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst) {
     if (av_drm_support()) {
         return g_drm.decrypt(handle, src, count, iv, dst);
     }
     return -1;
 }
 
-void ff_drm_close(void *handle)
+void av_drm_close(void *handle)
 {
     if (av_drm_support()) {
         return g_drm.close(handle);

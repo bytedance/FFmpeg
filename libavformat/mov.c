@@ -6747,7 +6747,7 @@ static int drm_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *sa
 
     if (!sample->subsample_count) {
         /* decrypt the whole packet */
-        ret = ff_drm_decrypt(c->drm_ctx, input, size, sample->iv, input);
+        ret = av_drm_decrypt(c->drm_ctx, input, size, sample->iv, input);
         if (ret != 0) {
             av_error(c->fc, AVERROR_DRM_DECRYPT_FAILED, "failed to drm decrypt whole packet, ret:%d\n", ret);
             return AVERROR_DRM_DECRYPT_FAILED;
@@ -6766,7 +6766,7 @@ static int drm_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *sa
         size -= sample->subsamples[i].bytes_of_clear_data;
 
         /* decrypt the encrypted bytes */
-        ret = ff_drm_decrypt(c->drm_ctx, input, sample->subsamples[i].bytes_of_protected_data, sample->iv, input);
+        ret = av_drm_decrypt(c->drm_ctx, input, sample->subsamples[i].bytes_of_protected_data, sample->iv, input);
         if (ret != 0) {
             av_error(c->fc, AVERROR_DRM_DECRYPT_FAILED, "failed to drm decrypt subsample, ret:%d\n", ret);
             return AVERROR_DRM_DECRYPT_FAILED;
@@ -6890,7 +6890,7 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
                 return ret;
             } else {
                 if (mov->drm_aptr == 0) {
-                    ff_drm_close(mov->drm_ctx);
+                    av_drm_close(mov->drm_ctx);
                     av_freep(&mov->drm_ctx);
                 }
                 mov->drm_ctx = NULL;
@@ -7638,7 +7638,7 @@ static int mov_read_close(AVFormatContext *s)
     av_freep(&mov->chapter_tracks);
     av_freep(&mov->mdl_file_key);
     if (mov->drm_aptr == 0) {
-        ff_drm_close(mov->drm_ctx);
+        av_drm_close(mov->drm_ctx);
         av_freep(&mov->drm_ctx);
     }
     mov->drm_ctx = NULL;

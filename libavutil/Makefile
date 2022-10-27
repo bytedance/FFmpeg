@@ -87,6 +87,7 @@ HEADERS = adler32.h                                                     \
           film_grain_params.h                                           \
           ttexport.h                                                    \
           mdl_info_wrapper.h                                            \
+          drm.h                                                         \
 
 HEADERS-$(CONFIG_LZO)                   += lzo.h
 

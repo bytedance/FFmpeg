@@ -24,9 +24,27 @@
 #ifndef AVUTIL_DRM_H
 #define AVUTIL_DRM_H
 
-int ff_drm_open(void *handle, const char *kid);
-int ff_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst);
-void ff_drm_close(void *handle);
+/**
+ * Open and init a drm context
+ * 
+ * @param handle Pointer to user-supplied Context
+ * @param kid A key id
+ */
+int av_drm_open(void *handle, const char *kid);
+
+/**
+ * Decrypt the data in src
+ * 
+ * @param handle Pointer to user-supplied Context
+ */
+int av_drm_decrypt(void *handle, const uint8_t *src, const int count, const uint8_t *iv, uint8_t *dst);
+
+/**
+ * Close and reset the drm context
+ * 
+ * @param handle Pointer to user-supplied Context
+ */
+void av_drm_close(void *handle);
 
 
 #endif /* AVUTIL_DRM_H */
