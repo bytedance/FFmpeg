@@ -7171,8 +7171,30 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         a.size = atom.size;
         a.type=0;
         if (atom.size >= 8) {
+            int64_t pos = avio_tell(pb);
             a.size = avio_rb32(pb);
             a.type = avio_rl32(pb);
+
+            if (a.type == MKTAG('m','o','o','v')) {
+                int64_t moov_pos = 0LL;
+                AVDictionaryEntry *moov = av_dict_get(c->fc->metadata, "moov_pos", NULL, 0);
+                if (moov && moov->value) {
+                    moov_pos = strtoll(moov->value, NULL, 10);
+                }
+                if (moov_pos == 0LL) {            
+                    av_dict_set_int(&c->fc->metadata, "moov_pos", pos, 0);
+                }
+            } else if (a.type == MKTAG('m','d','a','t')) {
+                int64_t mdat_pos = 0LL;
+                AVDictionaryEntry *mdat = av_dict_get(c->fc->metadata, "mdat_pos", NULL, 0);
+                if (mdat && mdat->value) {
+                    mdat_pos = strtoll(mdat->value, NULL, 10);
+                }
+                if (mdat_pos == 0LL) {
+                    av_dict_set_int(&c->fc->metadata, "mdat_pos", pos, 0);
+                }
+            }
+
             if (((a.type == MKTAG('f','r','e','e') && c->moov_retry) ||
                   a.type == MKTAG('h','o','o','v')) &&
                 a.size >= 8 &&
@@ -7187,6 +7209,14 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                     type == MKTAG('c','m','o','v')) {
                     av_log(c->fc, AV_LOG_ERROR, "Detected moov in a free or hoov atom.\n");
                     a.type = MKTAG('m','o','o','v');
+                    int64_t moov_pos = 0LL;
+                    AVDictionaryEntry *moov = av_dict_get(c->fc->metadata, "moov_pos", NULL, 0);
+                    if (moov && moov->value) {
+                        moov_pos = strtoll(moov->value, NULL, 10);
+                    }
+                    if (moov_pos == 0LL) {            
+                        av_dict_set_int(&c->fc->metadata, "moov_pos", pos, 0);
+                    }
                 }
             }
             if (atom.type != MKTAG('r','o','o','t') &&
