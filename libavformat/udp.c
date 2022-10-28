@@ -410,7 +410,7 @@ static struct addrinfo *udp_resolve_host(URLContext *h,
         node = hostname;
     }
     tt_network_log_callback(s->tt_opaque, IsDNSStart, s->user_flag);
-    if (!hostname || h->interrupt_callback.callback == NULL
+    if (!hostname || hostname[0] == 0 || h->interrupt_callback.callback == NULL
         || ff_support_external_dns() == 0) {
             res = ff_ip_resolve_host(h, node, port, type, family , flags);
     } else {
