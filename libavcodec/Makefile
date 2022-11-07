@@ -3,10 +3,12 @@ DESC = FFmpeg codec library
 
 HEADERS = ac3_parser.h                                                  \
           adts_parser.h                                                 \
+          audio_frame_queue.h                                           \
           avcodec.h                                                     \
           avdct.h                                                       \
           avfft.h                                                       \
           bsf.h                                                         \
+          bytestream.h                                                  \
           codec.h                                                       \
           codec_desc.h                                                  \
           codec_id.h                                                    \
