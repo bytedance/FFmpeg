@@ -20,6 +20,7 @@ HEADERS = ac3_parser.h                                                  \
           jni.h                                                         \
           mediacodec.h                                                  \
           packet.h                                                      \
+          parser.h                                                      \
           qsv.h                                                         \
           vaapi.h                                                       \
           vdpau.h                                                       \
