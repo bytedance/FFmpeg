@@ -215,6 +215,13 @@ int av_bsf_send_packet(AVBSFContext *ctx, AVPacket *pkt);
 int av_bsf_receive_packet(AVBSFContext *ctx, AVPacket *pkt);
 
 /**
+ * Called by the bitstream filters to get the next packet for filtering.
+ * The filter is responsible for either freeing the packet or passing it to the
+ * caller.
+ */
+int av_bsf_get_packet(AVBSFContext *ctx, AVPacket **pkt);
+
+/**
  * Reset the internal bitstream filter state. Should be called e.g. when seeking.
  */
 void av_bsf_flush(AVBSFContext *ctx);

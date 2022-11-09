@@ -250,6 +250,11 @@ int ff_bsf_get_packet(AVBSFContext *ctx, AVPacket **pkt)
     return 0;
 }
 
+int av_bsf_get_packet(AVBSFContext *ctx, AVPacket **pkt)
+{
+    return ff_bsf_get_packet(ctx, pkt);
+}
+
 int ff_bsf_get_packet_ref(AVBSFContext *ctx, AVPacket *pkt)
 {
     AVBSFInternal *bsfi = ctx->internal;
