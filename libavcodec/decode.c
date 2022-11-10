@@ -1145,7 +1145,7 @@ enum AVPixelFormat avcodec_default_get_format(struct AVCodecContext *avctx,
     // (this should be best software format if any exist).
     for (n = 0; fmt[n] != AV_PIX_FMT_NONE; n++);
     desc = av_pix_fmt_desc_get(fmt[n - 1]);
-    if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
+    if (!(desc && desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
         return fmt[n - 1];
 
     // Finally, traverse the list in order and choose the first entry
@@ -1338,7 +1338,7 @@ int ff_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt)
     av_assert0(n >= 1);
     // If a software format is available, it must be the last entry.
     desc = av_pix_fmt_desc_get(fmt[n - 1]);
-    if (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) {
+    if (desc && desc->flags & AV_PIX_FMT_FLAG_HWACCEL) {
         // No software format is available.
     } else {
         avctx->sw_pix_fmt = fmt[n - 1];
