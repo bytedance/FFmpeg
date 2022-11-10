@@ -36,4 +36,8 @@
  */
 int tt_register_avcodec(AVCodec *codec, int codec_size);
 
+typedef struct AVStreamInternal AVStreamInternal;
+
+AVCodecContext *tt_avstream_get_avctx_from_internal(AVStreamInternal *internal);
+
 #endif /* AVCODEC_TTEXPORT_H */

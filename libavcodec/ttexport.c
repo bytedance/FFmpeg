@@ -22,6 +22,7 @@
 #include "ttexport.h"
 #include "codec_id.h"
 #include <string.h>
+#include "libavformat/internal.h"
 
 AVCodec ff_bytevc1_decoder = {.name = "none", .id = AV_CODEC_ID_NONE};
 AVCodec ff_bytevc2_decoder = {.name = "none", .id = AV_CODEC_ID_NONE};
@@ -42,4 +43,11 @@ int tt_register_avcodec(AVCodec *codec, int codec_size)
         }
     }
     return ret;
+}
+
+AVCodecContext *tt_avstream_get_avctx_from_internal(AVStreamInternal *internal){
+    if (internal != NULL) {
+        return internal->avctx;
+    }
+    return NULL;
 }
