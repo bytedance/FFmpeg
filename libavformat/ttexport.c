@@ -170,3 +170,43 @@ int tt_io_init_context(AVIOContext *s,
 {
     return ffio_init_context(s, buffer, buffer_size, write_flag, opaque, read_packet, write_packet, seek);
 }
+
+static tt_save_ip       ff_save_ip = NULL;
+static tt_log_callback  ff_log_callback = NULL;
+static tt_read_callback ff_io_read_callback = NULL;
+static tt_info_callback ff_info_callback = NULL;
+
+void tt_register_io_callback(tt_save_ip       save_ip, 
+                             tt_log_callback  log_callback, 
+                             tt_read_callback read_callback, 
+                             tt_info_callback info_callback)
+{
+    ff_save_ip       = save_ip;
+    ff_log_callback  = log_callback;
+    ff_io_read_callback = read_callback;
+    ff_info_callback = info_callback;
+}
+
+void tt_save_host_addr(intptr_t tt_opaque, const char* ip, int user_flag) {
+    if (ff_save_ip != NULL) {
+        ff_save_ip(tt_opaque, ip, user_flag);
+    }
+}
+
+void tt_network_log_callback(intptr_t tt_opaque, int type, int user_flag) {
+    if (ff_log_callback != NULL) {
+        ff_log_callback(tt_opaque, type, user_flag);
+    }
+}
+
+void tt_network_io_read_callback(intptr_t tt_opaque, int type, int size) {
+    if (ff_io_read_callback != NULL && size > 0) {
+        ff_io_read_callback(tt_opaque, type, size);
+    }
+}
+
+void tt_network_info_callback(intptr_t tt_opaque, int key, int64_t value, const char* strValue) {
+    if (ff_info_callback != NULL) {
+        ff_info_callback(tt_opaque, key, value, strValue);
+    }
+}

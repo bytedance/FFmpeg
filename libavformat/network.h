@@ -26,6 +26,7 @@
 
 #include "config.h"
 #include "libavutil/error.h"
+#include "libavformat/ttexport.h"
 #include "os_support.h"
 #include "avio.h"
 #include "url.h"
@@ -308,6 +309,14 @@ int ff_http_match_no_proxy(const char *no_proxy, const char *hostname);
 int ff_socket(int domain, int type, int protocol);
 
 void ff_log_net_error(void *ctx, int level, const char* prefix);
+
+int ff_support_external_dns(void);
+
+void* ff_dns_start(intptr_t tt_opaque,const char* hostname, int user_flag);
+
+int ff_dns_result(void* ctx, char* ipaddress, int size);
+
+void ff_dns_free(void* ctx);
 
 /**
  * Do custom ssl verify with the delegate set by tt_set_verify_callback

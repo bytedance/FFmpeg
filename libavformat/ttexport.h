@@ -92,7 +92,13 @@ void tt_register_io_callback(tt_save_ip       save_ip,
                              tt_read_callback read_callback, 
                              tt_info_callback info_callback);
 
+void tt_save_host_addr(intptr_t tt_opaque, const char* ip, int user_flag);
 
+void tt_network_log_callback(intptr_t tt_opaque, int type, int user_flag);
+
+void tt_network_io_read_callback(intptr_t tt_opaque, int type, int size);
+
+void tt_network_info_callback(intptr_t tt_opaque, int key, int64_t value, const char* strValue);
 
 /**
  * Set the time base and wrapping info for a given stream. This will be used

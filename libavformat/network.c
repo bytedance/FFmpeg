@@ -602,30 +602,43 @@ void ff_log_net_error(void *ctx, int level, const char* prefix)
     av_log(ctx, level, "%s: %s\n", prefix, errbuf);
 }
 
+static tt_dns_start  _ff_dns_start  = NULL;
+static tt_dns_result _ff_dns_result = NULL;
+static tt_dns_free   _ff_dns_free   = NULL;
 
-static tt_dns_start  ff_dns_start  = NULL;
-static tt_dns_result ff_dns_result = NULL;
-static tt_dns_free   ff_dns_free   = NULL;
 
 void tt_register_dnsparser(tt_dns_start dns_start, tt_dns_result dns_result, tt_dns_free dns_free)
 {
-    ff_dns_start = dns_start;
-    ff_dns_result = dns_result;
-    ff_dns_free = dns_free;
+    _ff_dns_start = dns_start;
+    _ff_dns_result = dns_result;
+    _ff_dns_free = dns_free;
 }
 
-static tt_save_ip       ff_save_ip = NULL;
-static tt_log_callback  ff_log_callback = NULL;
-static tt_read_callback ff_read_callback = NULL;
-static tt_info_callback ff_info_callback = NULL;
+int ff_support_external_dns() {
+    if(_ff_dns_start == NULL || _ff_dns_result == NULL || _ff_dns_free == NULL) {
+        return 0;
+    }
+    return 1;
+}
 
-void tt_register_io_callback(tt_save_ip       save_ip, 
-                             tt_log_callback  log_callback, 
-                             tt_read_callback read_callback, 
-                             tt_info_callback info_callback)
-{
-    ff_save_ip       = save_ip;
-    ff_log_callback  = log_callback;
-    ff_read_callback = read_callback;
-    ff_info_callback = info_callback;
+void* ff_dns_start(intptr_t tt_opaque,const char* hostname, int user_flag) {
+    if (ff_support_external_dns()) {
+        return _ff_dns_start(tt_opaque, hostname, user_flag);
+    } else {
+        return NULL;
+    }
+}
+
+int ff_dns_result(void* ctx,char* ipaddress,int size) {
+    if (ff_support_external_dns()) {
+        return _ff_dns_result(ctx, ipaddress, size);
+    } else {
+        return -1;
+    }
+}
+
+void ff_dns_free(void* ctx) {
+    if (ff_support_external_dns()) {
+        _ff_dns_free(ctx);
+    }
 }
