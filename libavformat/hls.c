@@ -1861,7 +1861,7 @@ static int hls_close(AVFormatContext *s)
     return 0;
 }
 
-static int hls_read_header(AVFormatContext *s)
+static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
 {
     HLSContext *c = s->priv_data;
     int ret = 0, i;
@@ -1874,7 +1874,10 @@ static int hls_read_header(AVFormatContext *s)
     c->first_timestamp = AV_NOPTS_VALUE;
     c->cur_timestamp = AV_NOPTS_VALUE;
 
-    if ((ret = save_avio_options(s)) < 0)
+    if (options && *options &&
+            (ret = av_dict_copy(&c->avio_opts, *options, 0)) < 0)
+        goto fail;
+    else if ((ret = save_avio_options(s)) < 0)
         goto fail;
 
     /* XXX: Some HLS servers don't like being sent the range header,
@@ -2070,6 +2073,11 @@ static int hls_read_header(AVFormatContext *s)
 fail:
     hls_close(s);
     return ret;
+}
+
+static int hls_read_header(AVFormatContext *s)
+{
+    return hls_read_header2(s, NULL);
 }
 
 static int recheck_discard_flags(AVFormatContext *s, int first)
@@ -2423,6 +2431,7 @@ AVInputFormat ff_hls_demuxer = {
     .flags          = AVFMT_NOGENSEARCH | AVFMT_TS_DISCONT,
     .read_probe     = hls_probe,
     .read_header    = hls_read_header,
+    .read_header2   = hls_read_header2,
     .read_packet    = hls_read_packet,
     .read_close     = hls_close,
     .read_seek      = hls_read_seek,

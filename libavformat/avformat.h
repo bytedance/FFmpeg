@@ -751,6 +751,12 @@ typedef struct AVInputFormat {
     int (*read_header)(struct AVFormatContext *);
 
     /**
+     * Used by format which open further nested input. options are then to be passed to open_url() 
+     * for the nested input.
+     */
+    int (*read_header2)(struct AVFormatContext *, AVDictionary **options);
+
+    /**
      * Read one packet and put it in 'pkt'. pts and flags are also
      * set. 'avformat_new_stream' can be called only if the flag
      * AVFMTCTX_NOHEADER is used and only in the calling thread (not in a

@@ -2047,7 +2047,7 @@ static void move_metadata(AVStream *st, const char *key, char **value)
     }
 }
 
-static int dash_read_header(AVFormatContext *s)
+static int dash_read_header2(AVFormatContext *s, AVDictionary **options)
 {
     DASHContext *c = s->priv_data;
     struct representation *rep;
@@ -2058,7 +2058,10 @@ static int dash_read_header(AVFormatContext *s)
 
     c->interrupt_callback = &s->interrupt_callback;
 
-    if ((ret = save_avio_options(s)) < 0)
+    if (options && *options &&
+            (ret = av_dict_copy(&c->avio_opts, *options, 0)) < 0)
+        goto fail;
+    else if ((ret = save_avio_options(s)) < 0)
         goto fail;
 
     if ((ret = parse_manifest(s, s->url, s->pb)) < 0)
@@ -2168,6 +2171,11 @@ static int dash_read_header(AVFormatContext *s)
 fail:
     dash_close(s);
     return ret;
+}
+
+static int dash_read_header(AVFormatContext *s)
+{
+    return dash_read_header2(s, NULL);
 }
 
 static void recheck_discard_flags(AVFormatContext *s, struct representation **p, int n)
@@ -2404,6 +2412,7 @@ AVInputFormat ff_dash_demuxer = {
     .priv_data_size = sizeof(DASHContext),
     .read_probe     = dash_probe,
     .read_header    = dash_read_header,
+    .read_header2   = dash_read_header2,
     .read_packet    = dash_read_packet,
     .read_close     = dash_close,
     .read_seek      = dash_read_seek,

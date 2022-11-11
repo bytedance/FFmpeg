@@ -393,18 +393,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
 #if FF_API_DEMUXER_OPEN
 int av_demuxer_open(AVFormatContext *ic) {
-    int err;
+    int err = 0;
 
     if (ic->format_whitelist && av_match_list(ic->iformat->name, ic->format_whitelist, ',') <= 0) {
         av_log(ic, AV_LOG_ERROR, "Format not on whitelist \'%s\'\n", ic->format_whitelist);
         return AVERROR(EINVAL);
     }
 
-    if (ic->iformat->read_header) {
+    if (ic->iformat->read_header2) {
+        err = ic->iformat->read_header2(ic, NULL);
+    } else if (ic->iformat->read_header) {
         err = ic->iformat->read_header(ic);
-        if (err < 0)
-            return err;
     }
+
+    if (err < 0)
+        return err;
 
     if (ic->pb && !ic->internal->data_offset)
         ic->internal->data_offset = avio_tell(ic->pb);
@@ -595,12 +598,19 @@ FF_ENABLE_DEPRECATION_WARNINGS
         ff_id3v2_read_dict(s->pb, &s->internal->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
 
 #if FF_API_DEMUXER_OPEN
-    if (!(s->flags&AVFMT_FLAG_PRIV_OPT) && s->iformat->read_header)
-#else
-    if (s->iformat->read_header)
+    if (!(s->flags&AVFMT_FLAG_PRIV_OPT))
 #endif
-        if ((ret = s->iformat->read_header(s)) < 0)
+    {
+        if (s->iformat->read_header2) {
+            ret = s->iformat->read_header2(s, options);
+        } else if (s->iformat->read_header) {
+            ret = s->iformat->read_header(s);
+        }
+
+        if (ret < 0) {
             goto fail;
+        }
+    }
 
     if (!s->metadata) {
         s->metadata = s->internal->id3v2_meta;
