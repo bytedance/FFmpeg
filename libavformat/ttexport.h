@@ -164,4 +164,16 @@ int tt_io_init_context(AVIOContext *s,
                   int (*write_packet)(void *opaque, uint8_t *buf, int buf_size),
                   int64_t (*seek)(void *opaque, int64_t offset, int whence));
 
+
+/**
+ * Convert a relative url into an absolute url, given a base url.
+ *
+ * @param buf the buffer where output absolute url is written
+ * @param size the size of buf
+ * @param base the base url, may be equal to buf.
+ * @param rel the new url, which is interpreted relative to base
+ */
+void tt_make_absolute_url(char *buf, int size, const char *base,
+                          const char *rel);
+
 #endif /* AVFORMAT_TTEXPORT_H */
