@@ -431,6 +431,34 @@ int av_match_list(const char *name, const char *list, char separator);
 int av_sscanf(const char *string, const char *format, ...);
 
 /**
+ * strip symbol in string, from start of string
+ * 
+ * @param pStr pointer to string to be stripped
+ * @param c the symbol need to stripped
+ * @return size_t index of string
+ */
+size_t av_str_strip(const char* pStr, const char c);
+
+/**
+ * strip symbol in string, from end of string
+ * 
+ * @param pStr pointer to string to be stripped
+ * @param c the symbol need to stripped
+ * @return size_t index of string
+ */
+size_t av_str_strip_r(const char* pStr, const char c);
+
+/**
+ * split string with separator
+ * 
+ * @param pStr pointer to  string to be splitted
+ * @param str the separator
+ * @param size size of pList
+ * @param pList result
+ */
+void av_str_split(char* pStr, const char* str, int size, char* pList[]);
+
+/**
  * @}
  */
 

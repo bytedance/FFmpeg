@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * 
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 #include "avformat.h"
 #include "libavutil/avassert.h"
@@ -45,6 +48,10 @@ typedef struct TCPContext {
 #if !HAVE_WINSOCK2_H
     int tcp_mss;
 #endif /* !HAVE_WINSOCK2_H */
+    int is_first_packet;
+    int user_flag;
+    int64_t tt_opaque;
+    char ip_addr[132];
 } TCPContext;
 
 #define OFFSET(x) offsetof(TCPContext, x)
@@ -60,6 +67,9 @@ static const AVOption options[] = {
 #if !HAVE_WINSOCK2_H
     { "tcp_mss",     "Maximum segment size for outgoing TCP packets",          OFFSET(tcp_mss),     AV_OPT_TYPE_INT, { .i64 = -1 },         -1, INT_MAX, .flags = D|E },
 #endif /* !HAVE_WINSOCK2_H */
+    { "is_first_packet", "Mark data is first packet or not", OFFSET(is_first_packet), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
+    { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
     { NULL }
 };
 
@@ -105,6 +115,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     struct addrinfo hints = { 0 }, *ai, *cur_ai;
     int port, fd = -1;
     TCPContext *s = h->priv_data;
+    tt_network_log_callback(s->tt_opaque, IsTransOpenStart, s->user_flag);
     const char *p;
     char buf[256];
     int ret;
@@ -145,18 +156,73 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     snprintf(portstr, sizeof(portstr), "%d", port);
     if (s->listen)
         hints.ai_flags |= AI_PASSIVE;
-    if (!hostname[0])
-        ret = getaddrinfo(NULL, portstr, &hints, &ai);
-    else
-        ret = getaddrinfo(hostname, portstr, &hints, &ai);
-    if (ret) {
-        av_log(h, AV_LOG_ERROR,
-               "Failed to resolve hostname %s: %s\n",
-               hostname, gai_strerror(ret));
-        return AVERROR(EIO);
+    
+    if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_support_external_dns() == 0) {
+        tt_network_log_callback(s->tt_opaque, IsDNSStart, s->user_flag);
+        if (!hostname[0])
+                ret = getaddrinfo(NULL, portstr, &hints, &ai);
+        else
+                ret = getaddrinfo(hostname, portstr, &hints, &ai);
+
+        if (ret) {
+            av_log(h, AV_LOG_ERROR, "%d Failed to resolve hostname. %s\n",ff_neterrno(), gai_strerror(ret));
+            return AVERROR(EIO);
+        }
+    } else {
+        void* ctx = NULL;
+        int timelost = 0;
+        int timeout = s->open_timeout;
+        if(timeout == -1) {
+            timeout = 10*1000000;
+        }
+        tt_network_log_callback(s->tt_opaque, IsDNSStart, s->user_flag);
+        ctx = ff_dns_start(s->tt_opaque, hostname, s->user_flag);
+        if(ctx == NULL) {
+            av_log(h, AV_LOG_ERROR, "neterrno:%d Failed to resolve hostname.ctx is null.", ff_neterrno());
+            return AVERROR(EIO);
+        }
+	    ret = 0;
+        while(!h->interrupt_callback.callback(h->interrupt_callback.opaque)) {
+            ret = ff_dns_result(ctx, hostname, 1024);
+            if(ret != 0) {
+                break;
+            }
+            av_usleep (30000);
+            timelost += 30000;
+            if(timelost >= timeout) {
+                ret = -2;
+                break;
+            }
+        }
+        if(ctx != NULL) {
+            ff_dns_free(ctx);
+            ctx  = NULL;
+        }
+        if(ret > 0) {
+            ret = getaddrinfo(hostname, portstr, &hints, &ai);
+            if (ret) {
+                av_error(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME,"neterrno:%d Failed to resolve hostname,error:%s\n" , ff_neterrno(), gai_strerror(ret));
+                return AVERROR(EIO);
+            }
+            if(strlen(hostname) <= sizeof(s->ip_addr)) {
+                memcpy(s->ip_addr, hostname, strlen(hostname));
+            }
+            tt_save_host_addr(s->tt_opaque, s->ip_addr, s->user_flag);
+            ret = 1;
+        } else if(ret == -1) {
+            av_error(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME, "%d Failed to resolve hostname %s.", -EFAULT, hostname);
+        } else if(ret == -2) {
+            av_error(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME_TIMEOUT, "%d Failed to resolve hostname time out.", -ETIMEDOUT);
+        } else {
+            av_error(h, AVERROR_FAILED_TO_RESOLVE_HOSTNAME, "ret:%d neterrno:%d Failed to resolve hostname.", ret, ff_neterrno());
+        }
+        if (ret <= 0) {
+            return AVERROR(EIO);
+        }
     }
 
     cur_ai = ai;
+    tt_network_log_callback(s->tt_opaque, IsDNSParsed, s->user_flag);
 
 #if HAVE_STRUCT_SOCKADDR_IN6
     // workaround for IOS9 getaddrinfo in IPv6 only network use hardcode IPv4 address can not resolve port number.
@@ -180,6 +246,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
         }
         if (fd < 0)
             goto fail1;
+        tt_network_log_callback(s->tt_opaque, IsSocketCreateSuccess, s->user_flag);
         customize_fd(s, fd);
     }
 
@@ -204,9 +271,14 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     s->fd = fd;
 
     freeaddrinfo(ai);
+    tt_network_log_callback(s->tt_opaque, IsSocketConnected, s->user_flag);
     return 0;
 
  fail1:
+    if (ret < 0) {
+        tt_network_log_callback(s->tt_opaque, IsSocketOpenErr, ret);
+    }
+
     if (fd >= 0)
         closesocket(fd);
     freeaddrinfo(ai);
@@ -238,13 +310,36 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd_timeout(s->fd, 0, h->rw_timeout, &h->interrupt_callback);
-        if (ret)
+        if (ret) {
+            if(ret != AVERROR_EXIT) {
+                //you cann't call ff_neterrno here, because errno will be set by other operations.
+                tt_network_log_callback(s->tt_opaque, IsSocketReadErr, ret);
+                av_error(h, AVERROR_READ_NETWORK_WAIT_TIMEOUT, "ret:%d neterrno:%d network wait timeout", ret, ff_neterrno());
+            }
+
             return ret;
+        }
     }
     ret = recv(s->fd, buf, size, 0);
     if (ret == 0)
         return AVERROR_EOF;
-    return ret < 0 ? ff_neterrno() : ret;
+    // return ret < 0 ? ff_neterrno() : ret;
+    if (ret < 0) {
+        int error = ff_neterrno();
+        tt_network_log_callback(s->tt_opaque, IsSocketReadErr, error);
+        av_error(h, AVERROR_RECEIV_DATA_FAILED, "ret:%d neterrno:%d socket revc data failed", ret, error);
+        return error;
+    }
+
+    if (ret > 0) {
+        tt_network_io_read_callback(s->tt_opaque, IsNetworkIORead, ret);
+        if (!s->is_first_packet) {
+            tt_network_log_callback(s->tt_opaque, IsPacketRecved, s->user_flag);
+            s->is_first_packet = 1;
+        }
+    }
+    return ret;
+
 }
 
 static int tcp_write(URLContext *h, const uint8_t *buf, int size)
@@ -254,27 +349,41 @@ static int tcp_write(URLContext *h, const uint8_t *buf, int size)
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd_timeout(s->fd, 1, h->rw_timeout, &h->interrupt_callback);
-        if (ret)
+        if (ret) {
+            tt_network_log_callback(s->tt_opaque, IsSocketWriteErr, ret);
+            av_error(h, AVERROR_WRITE_NETWORK_WAIT_TIMEOUT, "ret:%d neterrno:%d network wait timeout", ret, ff_neterrno());
             return ret;
+        }
     }
     ret = send(s->fd, buf, size, MSG_NOSIGNAL);
-    return ret < 0 ? ff_neterrno() : ret;
+    // return ret < 0 ? ff_neterrno() : ret;
+    if (ret < 0) {
+        int error = ff_neterrno();
+        tt_network_log_callback(s->tt_opaque, IsSocketWriteErr, ret);
+        av_error(h, AVERROR_SEND_DATA_FAILED, "ret:%d neterrno:%d socket send failed", ret, error);
+		return error;
+    }
+    return ret;
+
 }
 
 static int tcp_shutdown(URLContext *h, int flags)
 {
     TCPContext *s = h->priv_data;
-    int how;
 
-    if (flags & AVIO_FLAG_WRITE && flags & AVIO_FLAG_READ) {
-        how = SHUT_RDWR;
-    } else if (flags & AVIO_FLAG_WRITE) {
-        how = SHUT_WR;
+    if(flags & AVIO_FLAG_STOP) {
+        return 0;
     } else {
-        how = SHUT_RD;
+        int how;
+        if (flags & AVIO_FLAG_WRITE && flags & AVIO_FLAG_READ) {
+            how = SHUT_RDWR;
+        } else if (flags & AVIO_FLAG_WRITE) {
+            how = SHUT_WR;
+        } else {
+            how = SHUT_RD;
+        }
+        return shutdown(s->fd, how);
     }
-
-    return shutdown(s->fd, how);
 }
 
 static int tcp_close(URLContext *h)

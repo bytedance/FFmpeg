@@ -468,3 +468,37 @@ int av_match_list(const char *name, const char *list, char separator)
 
     return 0;
 }
+
+
+size_t av_str_strip(const char* pStr, const char c) {
+    if (!pStr) return 0;
+    const char *ptmp = pStr;
+    while (*pStr && *pStr == c) pStr++;
+    return (pStr - ptmp);
+}
+
+size_t av_str_strip_r(const char *pStr, const char c) {
+    if (!pStr) return 0;
+    size_t len = strlen(pStr);
+    while (len && *(pStr + len - 1) == c) len--;
+    return len;
+}
+
+void av_str_split(char* pStr, const char* str, int size, char* pList[]) {
+    if (size == 0 || !pStr || !str) return ;
+    pList[0] = pStr;
+    for (int i=1; i<size; i++) {
+        char* pSrc = strstr(pStr, str);
+        if (!pSrc) {
+            pList[i] = NULL;
+            break;
+        }   
+        memset(pSrc, 0, strlen(str));
+        pStr = pSrc + strlen(str);
+        pList[i] = pStr;
+        if (pStr == NULL) {
+            break;
+        }
+    }   
+    return;  
+}

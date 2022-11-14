@@ -46,6 +46,7 @@ typedef struct TLSContext {
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
     BIO_METHOD* url_bio_method;
 #endif
+    int64_t tt_opaque;
 } TLSContext;
 
 #if HAVE_THREADS && OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -328,6 +329,15 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         ret = AVERROR(EIO);
         goto fail;
     } else if (ret < 0) {
+        if (!c->listen) {
+            // SSL_connect failed, report verify detail
+            uint32_t ssl_error_code = ERR_get_error();
+            const char* ssl_error_str = ERR_error_string(ssl_error_code, NULL);
+            av_log(h, AV_LOG_ERROR, "ssl_error_code %"PRIx32" ssl_error_str %s",ssl_error_code,ssl_error_str);
+            tt_network_info_callback(p->tt_opaque, IsCertVerifyDetail, 1, ssl_error_str);
+            ret = AVERROR(EIO);
+            goto fail;
+        }
         ret = print_tls_error(h, ret);
         goto fail;
     }
@@ -380,8 +390,13 @@ static int tls_get_short_seek(URLContext *h)
     return ffurl_get_short_seek(s->tls_shared.tcp);
 }
 
+#define OFFSET(x) offsetof(TLSContext, x)
+#define D AV_OPT_FLAG_DECODING_PARAM
+#define E AV_OPT_FLAG_ENCODING_PARAM
+
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
     { NULL }
 };
 
