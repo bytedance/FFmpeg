@@ -513,7 +513,19 @@ enum NetWorkStatusLog {
     IsCustomKeyStart = 1000,
 };
 
-enum NetWorkInfo {
+enum ssl_custom_verify_result {
+    ssl_custom_verify_suc = 0,
+    ssl_custom_verify_internal_not_init = 1,
+    ssl_custom_verify_host_null = 2,
+    ssl_custom_verify_ssl_null = 3,
+    ssl_custom_verify_certificate_null = 4,
+    ssl_custom_verify_timeout = 5,//timeout 1200ms
+    ssl_custom_callback_null = -99999,
+    ssl_custom_create_verifyptr_fail = -99998,
+    ssl_custom_create_param_fail = -99997,
+};
+
+typedef enum {
     IsLoaderType = 0,
     IsConnectionInfo = 1,
     IsGetResponseHeaders = 31,
@@ -521,8 +533,18 @@ enum NetWorkInfo {
     IsHTTPReqCallback = 33,
     IsSidxInfoCallback = 34,
     IsFlvVideoTagInfo = 35,
-    IsFlvAudioTagInfo = 36
-};
+    IsFlvAudioTagInfo = 36,
+} NetWorkInfo;
+
+typedef enum {
+    IsCacheOnlyNotCancelPreload = 1,
+    IsCacheThenNetworkNotCancelPreload = 2,
+} MdlReadSource;
+
+typedef enum {
+    IsRequestStart  = 0,
+    IsRequestFinish = 1,
+} NetworkOpt;
 
 /**
  * @addtogroup lavf_encoding
@@ -2875,6 +2897,21 @@ void av_url_split(char *proto,         int proto_size,
                   int *port_ptr,
                   char *path,          int path_size,
                   const char *url);
+/**
+ * Split a URL string into components.
+ *
+ * The pointers to buffers for storing individual components may be null,
+ * in order to ignore that component. Buffers for components not found are
+ * set to empty strings. If the port is not found, it is set to a negative
+ * value.
+ *
+ * @param hostname the buffer for the host name
+ * @param hostname_size the size of the hostname buffer
+ * @param port_ptr a pointer to store the port number in
+ * @param url the URL to split
+ */
+void av_url_split_hostname(char *hostname, int hostname_size,
+                           int *port_ptr, const char *url);
 
 
 /**

@@ -79,6 +79,7 @@ static const AVClass tcp_class = {
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
+const char *tcp_get_ip_addr(URLContext *h);
 
 static void customize_fd(void *ctx, int fd)
 {
@@ -397,6 +398,15 @@ static int tcp_get_file_handle(URLContext *h)
 {
     TCPContext *s = h->priv_data;
     return s->fd;
+}
+
+const char *tcp_get_ip_addr(URLContext *h)
+{
+    TCPContext *s = h->priv_data;
+    if(s->ip_addr[0] != '\0') {
+        return s->ip_addr;
+    }
+    return NULL;
 }
 
 static int tcp_get_window_size(URLContext *h)
