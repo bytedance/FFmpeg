@@ -36,12 +36,18 @@
 #include "internal.h"
 #include "avio_internal.h"
 #include "flv.h"
+#include "sample_aes.h"
 
 #define VALIDATE_INDEX_TS_THRESH 2500
 
 #define RESYNC_BUFFER_SIZE (1<<20)
 
 #define MAX_DEPTH 16      ///< arbitrary limit to prevent unbounded recursion
+
+enum FlvKeyType {
+    KEY_NONE,
+    KEY_SAMPLE_AES
+};
 
 typedef struct FLVContext {
     const AVClass *class; ///< Class for private options.
@@ -77,6 +83,10 @@ typedef struct FLVContext {
     int64_t last_ts;
     int64_t time_offset;
     int64_t time_pos;
+
+    char *decryption_key;
+    enum FlvKeyType key_type;
+    CryptoContext crypto_ctx;
 
     int  check_corrupt_packet;
     int  skip_find_unnecessary_stream;
@@ -679,6 +689,10 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
                     if (   !strcmp (str_val, "MEGA")
                         || !strncmp(str_val, "FlixEngine", 10))
                         flv->broken_sizes = 1;
+                } else if (!strcmp(key, "encrypt_method")) {
+                    if (!strcmp(str_val, "SAMPLE-AES")) {
+                        flv->key_type = KEY_SAMPLE_AES;
+                    }
                 }
             }
         }
@@ -837,6 +851,8 @@ static int flv_read_close(AVFormatContext *s)
         av_freep(&flv->new_extradata[i]);
     av_freep(&flv->keyframe_times);
     av_freep(&flv->keyframe_filepositions);
+    av_freep(&flv->decryption_key);
+    av_freep(&flv->crypto_ctx.aes_ctx);
     return 0;
 }
 
@@ -1360,6 +1376,18 @@ retry_duration:
         stream_type == FLV_STREAM_TYPE_SUBTITLE ||
         stream_type == FLV_STREAM_TYPE_DATA)
         pkt->flags |= AV_PKT_FLAG_KEY;
+
+    if (flv->decryption_key && flv->key_type == KEY_SAMPLE_AES) {
+
+        if(flv->crypto_ctx.aes_ctx == NULL){
+            flv->crypto_ctx.aes_ctx = av_aes_alloc();
+        }
+        memcpy(flv->crypto_ctx.key, flv->decryption_key, CRYPT_IV_LEN);
+        memcpy(flv->crypto_ctx.iv, DEFAULT_IV, CRYPT_IV_LEN);
+        enum AVCodecID codec_id=s->streams[pkt->stream_index]->codecpar->codec_id;
+        ff_flv_senc_decrypt_frame(codec_id, &flv->crypto_ctx, pkt);
+    }
+
     // packet reading corrupt   
     if (flv->check_corrupt_packet && (pkt->flags & AV_PKT_FLAG_CORRUPT))
         return ret;
@@ -1404,6 +1432,7 @@ static const AVOption options[] = {
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "check_corrupt_packet", "Enable check_corrupt_packet", OFFSET(check_corrupt_packet), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, VD },
     { "skip_find_unnecessary_stream", "Skip find unnecessary stream", OFFSET(skip_find_unnecessary_stream), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
+    { "decryption_key", "Media decryption key", OFFSET(decryption_key), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VD },
     { NULL }
 };
 

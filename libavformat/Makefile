@@ -24,6 +24,7 @@ OBJS = allformats.o         \
        url.o                \
        utils.o              \
        ttexport.o           \
+       sample_aes.o         \
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 
