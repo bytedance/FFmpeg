@@ -519,7 +519,9 @@ enum NetWorkInfo {
     IsGetResponseHeaders = 31,
     IsMDLInfoCallBack = 32,
     IsHTTPReqCallback = 33,
-    IsSidxInfoCallback = 34
+    IsSidxInfoCallback = 34,
+    IsFlvVideoTagInfo = 35,
+    IsFlvAudioTagInfo = 36
 };
 
 /**

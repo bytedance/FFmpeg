@@ -30,6 +30,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/time.h"
 #include "libavutil/time_internal.h"
 #include "libavcodec/bytestream.h"
 #include "avformat.h"
@@ -37,6 +38,7 @@
 #include "avio_internal.h"
 #include "flv.h"
 #include "sample_aes.h"
+#include "network.h"
 
 #define VALIDATE_INDEX_TS_THRESH 2500
 
@@ -51,6 +53,7 @@ enum FlvKeyType {
 
 typedef struct FLVContext {
     const AVClass *class; ///< Class for private options.
+    int64_t tt_opaque;
     int trust_metadata;   ///< configure streams according onMetaData
     int trust_datasize;   ///< trust data size of FLVTag
     int dump_full_metadata;   ///< Dump full metadata of the onMetadata
@@ -91,6 +94,7 @@ typedef struct FLVContext {
     int  check_corrupt_packet;
     int  skip_find_unnecessary_stream;
     int  head_flags;
+    int flv_speed_measurement;
 } FLVContext;
 
 /* AMF date type */
@@ -1110,6 +1114,10 @@ retry:
 
     next = size + avio_tell(s->pb);
 
+    int64_t tag_start_time = 0;
+    if (flv->flv_speed_measurement && (type == FLV_TAG_TYPE_AUDIO || type == FLV_TAG_TYPE_VIDEO)) {
+        tag_start_time = av_gettime();
+    }
     if (type == FLV_TAG_TYPE_AUDIO) {
         stream_type = FLV_STREAM_TYPE_AUDIO;
         flags    = avio_r8(s->pb);
@@ -1348,6 +1356,14 @@ retry_duration:
     }
 
     ret = av_get_packet(s->pb, pkt, size);
+    if (flv->flv_speed_measurement && ret > 0 && tag_start_time != 0 && (stream_type == FLV_STREAM_TYPE_VIDEO || stream_type == FLV_STREAM_TYPE_AUDIO)) {
+        int64_t cur_time = av_gettime();
+        int64_t time_diff = cur_time - tag_start_time;
+        tag_start_time = 0;
+        char ret_str[16];
+        snprintf(ret_str, 16, "%d", ret);
+        tt_network_info_callback(flv->tt_opaque, stream_type == FLV_STREAM_TYPE_VIDEO ? IsFlvVideoTagInfo : IsFlvAudioTagInfo, time_diff, ret_str);
+    }
     if (ret < 0)
         return ret;
     pkt->dts          = dts;
@@ -1428,11 +1444,13 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 static const AVOption options[] = {
     { "flv_metadata", "Allocate streams according to the onMetaData array", OFFSET(trust_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "flv_full_metadata", "Dump full metadata of the onMetadata", OFFSET(dump_full_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = VD },
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "check_corrupt_packet", "Enable check_corrupt_packet", OFFSET(check_corrupt_packet), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, VD },
     { "skip_find_unnecessary_stream", "Skip find unnecessary stream", OFFSET(skip_find_unnecessary_stream), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "decryption_key", "Media decryption key", OFFSET(decryption_key), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VD },
+    { "flv_speed_measurement", "enable flv tag-based speed measurement", OFFSET(flv_speed_measurement), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = VD },
     { NULL }
 };
 
