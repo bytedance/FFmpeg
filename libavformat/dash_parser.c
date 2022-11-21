@@ -26,6 +26,7 @@
 #include "dash_context.h"
 #include "dash_parser.h"
 #include <libxml/parser.h>
+#include <libavformat/ttexport.h>
 
 int add_to_pktbuf(AVPacketList **packet_buffer, AVPacket *pkt,
                          AVPacketList **plast_pktl)
