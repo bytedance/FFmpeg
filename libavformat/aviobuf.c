@@ -17,6 +17,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include "libavutil/bprint.h"
@@ -269,6 +272,15 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
     // pos is the absolute position that the beginning of s->buffer corresponds to in the file
     pos = s->pos - (s->write_flag ? 0 : buffer_size);
 
+    if (whence == AVSEEK_CACHEEND && offset == 0) {
+        int64_t ret = s->seek(s->opaque, offset, SEEK_CUR);
+        if (ret <= 0) {
+            whence = SEEK_CUR;
+        } else {
+            return ret;
+        }
+    }
+
     if (whence != SEEK_CUR && whence != SEEK_SET)
         return AVERROR(EINVAL);
 
@@ -288,6 +300,12 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
         short_seek = FFMAX(s->short_seek_get(s->opaque), short_seek);
 
     offset1 = offset - pos; // "offset1" is the relative offset from the beginning of s->buffer
+    int priv_direct = 0;
+    if (s->av_class) {
+        int64_t priv_direct_value = 0;
+        av_opt_get_int(s, "priv_direct", AV_OPT_SEARCH_CHILDREN, &priv_direct_value);
+        priv_direct = s->direct && priv_direct_value;
+    }
     s->buf_ptr_max = FFMAX(s->buf_ptr_max, s->buf_ptr);
     if ((!s->direct || !s->seek) &&
         offset1 >= 0 && offset1 <= (s->write_flag ? s->buf_ptr_max - s->buffer : buffer_size)) {
@@ -300,10 +318,12 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
               (whence != SEEK_END || force)) {
         while(s->pos < offset && !s->eof_reached)
             fill_buffer(s);
-        if (s->eof_reached)
+        if (s->eof_reached) {
+            av_log(s, AV_LOG_TRACE, "seek fail eof");
             return AVERROR_EOF;
+        }
         s->buf_ptr = s->buf_end - (s->pos - offset);
-    } else if(!s->write_flag && offset1 < 0 && -offset1 < buffer_size>>1 && s->seek && offset > 0) {
+    } else if(!s->write_flag && offset1 < 0 && -offset1 < buffer_size>>1 && s->seek && offset > 0 && !priv_direct) {
         int64_t res;
 
         pos -= FFMIN(buffer_size>>1, pos);
@@ -743,6 +763,7 @@ int ffio_read_indirect(AVIOContext *s, unsigned char *buf, int size, const unsig
 int avio_read_partial(AVIOContext *s, unsigned char *buf, int size)
 {
     int len;
+    int size1 = size;
 
     if (size < 0)
         return AVERROR(EINVAL);
@@ -754,20 +775,49 @@ int avio_read_partial(AVIOContext *s, unsigned char *buf, int size)
         return len;
     }
 
-    len = s->buf_end - s->buf_ptr;
-    if (len == 0) {
-        fill_buffer(s);
-        len = s->buf_end - s->buf_ptr;
+    while (size == size1) {
+        len = FFMIN(s->buf_end - s->buf_ptr, size);
+        if (len == 0) {
+            if (s->direct && !s->update_checksum) {
+                // bypass the buffer and read data directly into buf
+                if (s->read_packet)
+                    len = s->read_packet(s->opaque, buf, size);
+
+                if (len <= 0) {
+                    /* do not modify buffer if EOF reached so that a seek back can
+                    be done without rereading data */
+                    s->eof_reached = 1;
+                    if (len < 0)
+                        s->error = len;
+                    break;
+                } else {
+                    s->pos += len;
+                    s->bytes_read += len;
+                    size -= len;
+                    buf += len;
+                    // reset the buffer
+                    s->buf_ptr = s->buffer;
+                    s->buf_end = s->buffer /* + len*/;
+                }
+            } else {
+                s->buf_end = s->buf_ptr = s->buffer;
+                fill_buffer(s);
+                len = s->buf_end - s->buf_ptr;
+                if (len == 0)
+                    break;
+            }
+        } else {
+            memcpy(buf, s->buf_ptr, len);
+            buf += len;
+            s->buf_ptr += len;
+            size -= len;
+        }
     }
-    if (len > size)
-        len = size;
-    memcpy(buf, s->buf_ptr, len);
-    s->buf_ptr += len;
-    if (!len) {
+    if (size1 == size) {
         if (s->error)      return s->error;
         if (avio_feof(s))  return AVERROR_EOF;
     }
-    return len;
+    return size1 - size;
 }
 
 unsigned int avio_rl16(AVIOContext *s)
