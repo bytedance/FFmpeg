@@ -1,17 +1,30 @@
 type: pipeline
 
 jobs:
-
-  linux_fate:
+  linux_x86_fate:
     type: service
     service_name: template
-    display_name: linux fate
+    display_name: linux x86 fate
     settings:
-      template_config_id: 24835
+      template_config_id: 24845
 
-  macOS_fate:
+  macOS_x86_fate:
     type: service
     service_name: template
-    display_name: macOS fate
+    display_name: macOS x86 fate
     settings:
-      template_config_id: 24839
+      template_config_id: 24846
+
+  linux_x86_fate_rsync:
+    type: service
+    service_name: template
+    display_name: linux x86 fate rsync
+    settings:
+      template_config_id: 24883
+
+  macOS_x86_fate_rsync:
+    type: service
+    service_name: template
+    display_name: macOS x86 fate rsync
+    settings:
+      template_config_id: 24882
