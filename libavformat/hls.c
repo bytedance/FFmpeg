@@ -214,7 +214,7 @@ typedef struct HLSContext {
     int http_seekable;
     AVIOContext *playlist_pb;
 
-    int64_t tt_opaque;
+    intptr_t tt_opaque;
 } HLSContext;
 
 static void free_segment_dynarray(struct segment **segments, int n_segments)
@@ -2415,7 +2415,7 @@ static const AVOption hls_options[] = {
         OFFSET(http_multiple), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, FLAGS},
     {"http_seekable", "Use HTTP partial requests, 0 = disable, 1 = enable, -1 = auto",
         OFFSET(http_seekable), AV_OPT_TYPE_BOOL, { .i64 = -1}, -1, 1, FLAGS},
-    {"tt_opaque", "The user data for callback registed by tt_register*", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS},
+    {"tt_opaque", "The user data for callback registed by tt_register*", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS},
     {NULL}
 };
 

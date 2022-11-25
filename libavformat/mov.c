@@ -6689,7 +6689,7 @@ static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
 
     if (is_protected && c->enable_drm) {
-        c->drm_ctx = (void *) (intptr_t) c->drm_aptr;
+        c->drm_ctx = c->drm_aptr;
     }
     return 0;
 }
@@ -8842,7 +8842,7 @@ static const AVOption mov_options[] = {
     { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade),
         AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { "drm_aptr", "Drm aptr", OFFSET(drm_aptr),
-        AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = FLAGS },
+        AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = FLAGS },
     { "ignore_mdat", "ignore mdat", OFFSET(ignore_mdat),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "individually_eof", "individually eof", OFFSET(individually_eof),

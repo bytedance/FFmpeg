@@ -124,7 +124,7 @@ typedef struct UDPContext {
     IPSourceFilters filters;
 
     int user_flag;
-    int64_t tt_opaque;
+    intptr_t tt_opaque;
     int dns_parse_timeout;
 } UDPContext;
 
@@ -151,7 +151,7 @@ static const AVOption options[] = {
     { "sources",        "Source list",                                     OFFSET(sources),        AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
     { "block",          "Block list",                                      OFFSET(block),          AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
     { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
-    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
     { "ttmp_dns_parse_timeout", "dns parse timeout", OFFSET(dns_parse_timeout), AV_OPT_TYPE_INT, { .i64 = 5000000 }, -1, INT_MAX, .flags = D|E },
 
     { NULL }

@@ -46,7 +46,7 @@ typedef struct TLSContext {
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
     BIO_METHOD* url_bio_method;
 #endif
-    int64_t tt_opaque;
+    intptr_t tt_opaque;
 } TLSContext;
 
 #if HAVE_THREADS && OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -396,7 +396,7 @@ static int tls_get_short_seek(URLContext *h)
 
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
-    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
     { NULL }
 };
 

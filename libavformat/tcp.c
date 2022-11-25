@@ -50,7 +50,7 @@ typedef struct TCPContext {
 #endif /* !HAVE_WINSOCK2_H */
     int is_first_packet;
     int user_flag;
-    int64_t tt_opaque;
+    intptr_t tt_opaque;
     char ip_addr[132];
 } TCPContext;
 
@@ -69,7 +69,7 @@ static const AVOption options[] = {
 #endif /* !HAVE_WINSOCK2_H */
     { "is_first_packet", "Mark data is first packet or not", OFFSET(is_first_packet), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
-    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
     { NULL }
 };
 

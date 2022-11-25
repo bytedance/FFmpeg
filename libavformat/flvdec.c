@@ -53,7 +53,7 @@ enum FlvKeyType {
 
 typedef struct FLVContext {
     const AVClass *class; ///< Class for private options.
-    int64_t tt_opaque;
+    intptr_t tt_opaque;
     int trust_metadata;   ///< configure streams according onMetaData
     int trust_datasize;   ///< trust data size of FLVTag
     int dump_full_metadata;   ///< Dump full metadata of the onMetadata
@@ -1444,7 +1444,7 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 static const AVOption options[] = {
     { "flv_metadata", "Allocate streams according to the onMetaData array", OFFSET(trust_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "flv_full_metadata", "Dump full metadata of the onMetadata", OFFSET(dump_full_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
-    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = VD },
+    { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = VD },
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "check_corrupt_packet", "Enable check_corrupt_packet", OFFSET(check_corrupt_packet), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, VD },

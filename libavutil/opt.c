@@ -41,6 +41,8 @@
 #include "bprint.h"
 
 #include <float.h>
+#include <stdint.h>
+#include <stdio.h>
 
 const AVOption *av_opt_next(const void *obj, const AVOption *last)
 {
@@ -462,6 +464,17 @@ static int set_string_dict(void *obj, const AVOption *o, const char *val, uint8_
     return 0;
 }
 
+static int set_string_ptr(void *obj, const AVOption *o, const char *val, intptr_t *dst)
+{
+    if (!val)
+        *dst = 0;
+    else {
+        int64_t value = strtoll(val, NULL, 10);
+        *dst = value;
+    }
+    return 0;
+}
+
 int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
 {
     int ret = 0;
@@ -545,6 +558,8 @@ int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
         break;
     case AV_OPT_TYPE_DICT:
         return set_string_dict(obj, o, val, dst);
+    case AV_OPT_TYPE_IPTR:
+        return set_string_ptr(obj, o, val, dst);
     }
 
     av_log(obj, AV_LOG_ERROR, "Invalid option type.\n");
@@ -783,6 +798,7 @@ int av_opt_get(void *obj, const char *name, int search_flags, uint8_t **out_val)
     uint8_t *bin, buf[128];
     int len, i, ret;
     int64_t i64;
+    intptr_t iptr;
 
     if (!o || !target_obj || (o->offset<=0 && o->type != AV_OPT_TYPE_CONST))
         return AVERROR_OPTION_NOT_FOUND;
@@ -879,6 +895,10 @@ int av_opt_get(void *obj, const char *name, int search_flags, uint8_t **out_val)
             return 0;
         }
         return av_dict_get_string(*(AVDictionary **)dst, (char **)out_val, '=', ':');
+    case AV_OPT_TYPE_IPTR:
+        iptr = *(intptr_t *)dst;
+        ret = snprintf(buf, sizeof(buf), "%" PRIdPTR , iptr);
+        break;
     default:
         return AVERROR(EINVAL);
     }
@@ -1225,6 +1245,9 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
             case AV_OPT_TYPE_BOOL:
                 av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "<boolean>");
                 break;
+            case AV_OPT_TYPE_IPTR:
+                av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "<pointer>");
+                break;
             case AV_OPT_TYPE_CONST:
                 if (parent_type == AV_OPT_TYPE_INT)
                     av_log(av_log_obj, AV_LOG_INFO, "%-12"PRId64" ", opt->default_val.i64);
@@ -1333,6 +1356,9 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
             case AV_OPT_TYPE_CHANNEL_LAYOUT:
                 av_log(av_log_obj, AV_LOG_INFO, "0x%"PRIx64, opt->default_val.i64);
                 break;
+            case AV_OPT_TYPE_IPTR:
+                av_log(av_log_obj, AV_LOG_INFO, "%d", 0);
+                break;
             }
             av_log(av_log_obj, AV_LOG_INFO, ")");
         }
@@ -1417,6 +1443,9 @@ void av_opt_set_defaults2(void *s, int mask, int flags)
                 break;
             case AV_OPT_TYPE_DICT:
                 set_string_dict(s, opt, opt->default_val.str, dst);
+                break;
+            case AV_OPT_TYPE_IPTR:
+                set_string_ptr(s, opt, NULL, dst);
                 break;
         default:
             av_log(s, AV_LOG_DEBUG, "AVOption type %d of option %s not implemented yet\n",
@@ -1963,6 +1992,7 @@ int av_opt_is_set_to_default(void *obj, const AVOption *o)
     AVRational q;
     int ret, w, h;
     char *str;
+    intptr_t iptr;
     void *dst;
 
     if (!o || !obj)
@@ -2058,6 +2088,9 @@ int av_opt_is_set_to_default(void *obj, const AVOption *o)
                 return ret;
         }
         return !memcmp(color, dst, sizeof(color));
+    case AV_OPT_TYPE_IPTR:
+        iptr = *(intptr_t *)dst;
+        return (iptr == 0);
     }
     default:
         av_log(obj, AV_LOG_WARNING, "Not supported option type: %d, option name: %s\n", o->type, o->name);

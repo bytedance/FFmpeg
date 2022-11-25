@@ -17,6 +17,7 @@
  */
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "libavutil/common.h"
@@ -55,6 +56,7 @@ typedef struct TestContext {
     int bool1;
     int bool2;
     int bool3;
+    intptr_t iptr1;
     AVDictionary *dict1;
     AVDictionary *dict2;
 } TestContext;
@@ -91,6 +93,7 @@ static const AVOption test_options[]= {
     {"bool1",      "set boolean value",  OFFSET(bool1),          AV_OPT_TYPE_BOOL,           { .i64 = -1 },                    -1,         1, 1 },
     {"bool2",      "set boolean value",  OFFSET(bool2),          AV_OPT_TYPE_BOOL,           { .i64 = 1 },                     -1,         1, 1 },
     {"bool3",      "set boolean value",  OFFSET(bool3),          AV_OPT_TYPE_BOOL,           { .i64 = 0 },                      0,         1, 1 },
+    {"iptr1",      "set ptr value",      OFFSET(iptr1),          AV_OPT_TYPE_IPTR,           { .i64 = 0 },              INT64_MIN, INT64_MAX, 1 },
     {"dict1",      "set dictionary value", OFFSET(dict1),        AV_OPT_TYPE_DICT,           { .str = NULL},                    0,         0, 1 },
     {"dict2",      "set dictionary value", OFFSET(dict2),        AV_OPT_TYPE_DICT,           { .str = "happy=':-)'"},           0,         0, 1 },
     { NULL },
@@ -144,6 +147,7 @@ int main(void)
         printf("num64=%"PRId64"\n", test_ctx.num64);
         printf("flt=%.6f\n", test_ctx.flt);
         printf("dbl=%.6f\n", test_ctx.dbl);
+        printf("iptr1=%"PRIdPTR"\n", test_ctx.iptr1);
 
         av_opt_show2(&test_ctx, NULL, -1, 0);
 

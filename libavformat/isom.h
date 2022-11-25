@@ -304,7 +304,7 @@ typedef struct MOVContext {
     int disable_short_seek;
     int enable_drm;
     int drm_downgrade;
-    int64_t drm_aptr;
+    intptr_t drm_aptr;
     void *drm_ctx;
     int ignore_mdat;
     int individually_eof;
