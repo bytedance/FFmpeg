@@ -19,6 +19,9 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * This file may have been modified by Bytedance Inc. (“Bytedance Modifications”). 
+ * All Bytedance Modifications are Copyright 2022 Bytedance Inc.
  */
 
 #include "avformat.h"
@@ -36,6 +39,7 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_MPEG4       , 0x20 },
     { AV_CODEC_ID_H264        , 0x21 },
     { AV_CODEC_ID_HEVC        , 0x23 },
+    { AV_CODEC_ID_BYTE_VC2    , 0X24 },
     { AV_CODEC_ID_AAC         , 0x40 },
     { AV_CODEC_ID_MP4ALS      , 0x40 }, /* 14496-3 ALS */
     { AV_CODEC_ID_MPEG2VIDEO  , 0x61 }, /* MPEG-2 Main */
