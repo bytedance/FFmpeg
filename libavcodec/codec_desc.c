@@ -33,7 +33,7 @@
 
 static const AVCodecDescriptor codec_descriptors[] = {
     /* video codecs */
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
     {
         .id        = AV_CODEC_ID_MPEG1VIDEO,
         .type      = AVMEDIA_TYPE_VIDEO,
@@ -221,7 +221,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("Creative YUV (CYUV)"),
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
     {
         .id        = AV_CODEC_ID_H264,
         .type      = AVMEDIA_TYPE_VIDEO,
@@ -230,7 +230,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_LOSSLESS | AV_CODEC_PROP_REORDER,
         .profiles  = NULL_IF_CONFIG_SMALL(ff_h264_profiles),
     },
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
     {
         .id        = AV_CODEC_ID_INDEO3,
         .type      = AVMEDIA_TYPE_VIDEO,
@@ -3491,7 +3491,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("AVFrame to AVPacket passthrough"),
         .props     = AV_CODEC_PROP_LOSSLESS,
     },
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 };
 
 static int descriptor_compare(const void *key, const void *member)

@@ -574,7 +574,7 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
     h->pred16x16_add[ HOR_PRED8x8]= FUNCC(pred16x16_horizontal_add        , depth);\
 
     switch (bit_depth) {
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
         case 9:
             H264_PRED(9)
             break;
@@ -587,7 +587,7 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
         case 14:
             H264_PRED(14)
             break;
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
         default:
 //            av_assert0(bit_depth<=8);
             H264_PRED(8)

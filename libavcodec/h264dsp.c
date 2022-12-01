@@ -80,7 +80,7 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
         ADDPX_DSP(8);
     }
 
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
 
 #define H264_DSP(depth) \
     c->h264_idct_add= FUNC(ff_h264_idct_add, depth);\
@@ -178,10 +178,10 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
         c->h264_h_loop_filter_chroma_mbaff_intra= FUNC(h264_h_loop_filter_chroma_mbaff_intra, depth);\
     c->h264_loop_filter_strength= NULL;
 
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 
     switch (bit_depth) {
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
     case 9:
         H264_DSP(9);
         break;
@@ -194,7 +194,7 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
     case 14:
         H264_DSP(14);
         break;
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
     default:
 //        av_assert0(bit_depth<=8);
         H264_DSP(8);

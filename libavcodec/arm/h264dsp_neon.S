@@ -272,7 +272,7 @@ h_loop_filter_chroma420:
         bx              lr
 endfunc
 
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
 function ff_h264_h_loop_filter_chroma422_neon, export=1
         h264_loop_filter_start
         push            {r4, lr}
@@ -290,7 +290,7 @@ function ff_h264_h_loop_filter_chroma422_neon, export=1
         bl              h_loop_filter_chroma420
         pop             {r4, pc}
 endfunc
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 
 @ Biweighted prediction
 

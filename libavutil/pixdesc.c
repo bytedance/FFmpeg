@@ -171,7 +171,7 @@ void av_write_image_line(const uint16_t *src,
 FF_DISABLE_DEPRECATION_WARNINGS
 #endif
 
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
 static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
     [AV_PIX_FMT_YUV420P] = {
         .name = "yuv420p",
@@ -2582,7 +2582,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[] = {
         .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA,
     },
 };
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 
 #if FF_API_PLUS1_MINUS1
 FF_ENABLE_DEPRECATION_WARNINGS

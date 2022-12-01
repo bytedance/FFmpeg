@@ -1957,6 +1957,7 @@ CONFIG_LIST="
     valgrind_backtrace
     xmm_clobber_test
     boringsslverify
+    size_reduction
     $COMPONENT_LIST
 "
 
@@ -4115,6 +4116,9 @@ for opt do
         ;;
         --libfuzzer=*)
             libfuzzer_path="$optval"
+        ;;
+        --size_reduction)
+            enable size_reduction
         ;;
         *)
             optname="${opt%%=*}"

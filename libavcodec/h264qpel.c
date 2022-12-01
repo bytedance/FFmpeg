@@ -82,7 +82,7 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
     default:
         SET_QPEL(8);
         break;
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
     case 9:
         SET_QPEL(9);
         break;
@@ -95,7 +95,7 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
     case 14:
         SET_QPEL(14);
         break;
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
     }
 
     if (ARCH_AARCH64)

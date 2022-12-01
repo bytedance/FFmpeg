@@ -37,18 +37,18 @@ void ff_h264_v_loop_filter_chroma_neon(uint8_t *pix, ptrdiff_t stride, int alpha
                                        int beta, int8_t *tc0);
 void ff_h264_h_loop_filter_chroma_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
                                        int beta, int8_t *tc0);
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
 void ff_h264_h_loop_filter_chroma422_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
                                           int beta, int8_t *tc0);
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 void ff_h264_v_loop_filter_chroma_intra_neon(uint8_t *pix, ptrdiff_t stride,
                                              int alpha, int beta);
 void ff_h264_h_loop_filter_chroma_intra_neon(uint8_t *pix, ptrdiff_t stride,
                                              int alpha, int beta);
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
 void ff_h264_h_loop_filter_chroma422_intra_neon(uint8_t *pix, ptrdiff_t stride,
                                                 int alpha, int beta);
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
 void ff_h264_h_loop_filter_chroma_mbaff_intra_neon(uint8_t *pix, ptrdiff_t stride,
                                                    int alpha, int beta);
 
@@ -106,12 +106,12 @@ av_cold void ff_h264dsp_init_aarch64(H264DSPContext *c, const int bit_depth,
             c->h264_h_loop_filter_chroma_intra = ff_h264_h_loop_filter_chroma_intra_neon;
             c->h264_h_loop_filter_chroma_mbaff_intra = ff_h264_h_loop_filter_chroma_mbaff_intra_neon;
         } else {
-#ifndef RTC_SIZE_REDUCTION
+#if !CONFIG_SIZE_REDUCTION
             c->h264_h_loop_filter_chroma = ff_h264_h_loop_filter_chroma422_neon;
             c->h264_h_loop_filter_chroma_mbaff = ff_h264_h_loop_filter_chroma_neon;
             c->h264_h_loop_filter_chroma_intra = ff_h264_h_loop_filter_chroma422_intra_neon;
             c->h264_h_loop_filter_chroma_mbaff_intra = ff_h264_h_loop_filter_chroma_intra_neon;
-#endif  // RTC_SIZE_REDUCTION
+#endif  // CONFIG_SIZE_REDUCTION
         }
 
         c->weight_h264_pixels_tab[0] = ff_weight_h264_pixels_16_neon;
