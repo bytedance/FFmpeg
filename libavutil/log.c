@@ -53,11 +53,17 @@ static AVMutex mutex = AV_MUTEX_INITIALIZER;
 #define BACKTRACE_LOGLEVEL AV_LOG_ERROR
 #endif
 
+#ifdef _WIN32
+#define _TLS_TOKEN __declspec(thread)
+#else
+#define _TLS_TOKEN __thread
+#endif
+
 static int av_log_level = AV_LOG_INFO;
 static int flags;
 
-static __thread int av_log_tls_level = AV_LOG_LEVEL_INVALID;
-static __thread void (*av_log_tls_callback)(void*, int, int, const char*, va_list) = NULL;
+static _TLS_TOKEN int av_log_tls_level = AV_LOG_LEVEL_INVALID;
+static _TLS_TOKEN void (*av_log_tls_callback)(void*, int, int, const char*, va_list) = NULL;
 
 #define NB_LEVELS 8
 #if defined(_WIN32) && HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
