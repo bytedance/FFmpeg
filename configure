@@ -4117,9 +4117,6 @@ for opt do
         --libfuzzer=*)
             libfuzzer_path="$optval"
         ;;
-        --size_reduction)
-            enable size_reduction
-        ;;
         *)
             optname="${opt%%=*}"
             optname="${optname#--}"
