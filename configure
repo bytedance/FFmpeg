@@ -3497,6 +3497,7 @@ udp_protocol_select="network"
 udplite_protocol_select="network"
 unix_protocol_deps="sys_un_h"
 unix_protocol_select="network"
+mediadatasource_protocol_deps="jni"
 
 # external library protocols
 libamqp_protocol_deps="librabbitmq"
