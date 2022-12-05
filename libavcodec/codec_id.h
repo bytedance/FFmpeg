@@ -49,6 +49,7 @@ enum AVCodecID {
     /* video codecs */
     AV_CODEC_ID_MPEG1VIDEO,
     AV_CODEC_ID_MPEG2VIDEO, ///< preferred ID for MPEG-1/2 video decoding
+    AV_CODEC_ID_MPEG2VIDEO_XVMC, // for compat with old version
     AV_CODEC_ID_H261,
     AV_CODEC_ID_H263,
     AV_CODEC_ID_RV10,
