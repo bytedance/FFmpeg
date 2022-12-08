@@ -76,9 +76,6 @@
 #define FALSE 0
 #endif
 
-
-#define QUIC_REARGUARD 2
-
 typedef enum {
     LOWER_PROTO,
     READ_HEADERS,
@@ -173,13 +170,10 @@ typedef struct HTTPContext {
     uint64_t auto_range_offset;
 
     // for mdl info
-#if !CONFIG_LITE
     char *mdl_file_key;
     char *mdl_load_traceid;
     int64_t mdl_load_handle;
     int mdl_format_type;
-#endif
-    int rearguard;
     int quic_keep_host;
 } HTTPContext;
 
@@ -235,13 +229,10 @@ static const AVOption options[] = {
     { "r_auto_range", "http range less than file size. auto new range read", OFFSET(is_r_auto_range), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "unlimit_header", "unlimit http header size", OFFSET(unlimit_header), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "auto_range_offset", "http range size while read auto range mode", OFFSET(auto_range_offset), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, 5 * 1024 * 1024, D },
-#if !CONFIG_LITE
     { "mdl_file_key", "mdl file key", OFFSET(mdl_file_key), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
     { "mdl_load_traceid", "mdl down load traceid", OFFSET(mdl_load_traceid), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
     { "mdl_load_handle", "initial byte offset", OFFSET(mdl_load_handle), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
     { "mdl_format_type", "format type video or audio", OFFSET(mdl_format_type), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, D },
-#endif
-    { "rearguard", "ios player rearguard version", OFFSET(rearguard), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, D},
     { "quic_keep_host", "quic keep host when 302", OFFSET(quic_keep_host), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, D|E},
     { NULL }
 };
@@ -320,7 +311,6 @@ static void http_callback_request(URLContext *h, NetworkOpt req, const char* url
     tt_network_info_callback(s->tt_opaque, IsHTTPReqCallback, req, NULL);
 }
 static void http_callback_info(URLContext *h) {
-#if !CONFIG_LITE
     HTTPContext *s = h->priv_data;
     struct MDLInfoContext info;
     if(s->mdl_file_key == NULL || s->mdl_load_traceid == NULL) {
@@ -334,7 +324,6 @@ static void http_callback_info(URLContext *h) {
     //for callback. notice,it is Shallow copy!
     av_log(h, AV_LOG_DEBUG, "start callback mdl info");
     tt_network_info_callback(s->tt_opaque, IsMDLInfoCallBack, 0, (char*)(&info));
-#endif
 }
 
 static int http_change_hostname(HTTPContext*s) {
@@ -439,7 +428,7 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
         if (port < 0)
             port = 443;
     } else if (!strcmp(proto, "httpq")) {
-        lower_proto = (s->rearguard & QUIC_REARGUARD) ? "rearquic" : "quic";
+        lower_proto = "quic";
         use_proxy   = 0;
         if (port < 0)
             port = 443;
@@ -884,7 +873,7 @@ static int http_open(URLContext *h, const char *uri, int flags,
                      AVDictionary **options)
 {
     HTTPContext *s = h->priv_data;
-    tt_network_info_callback(s->tt_opaque, IsHttpOpenStart, s->user_flag, NULL);
+    tt_network_log_callback(s->tt_opaque, IsHttpOpenStart, s->user_flag);
     int ret;
 #if DUMP_BITSTREAM
     get_stream_name(uri, stream_name);
@@ -903,8 +892,9 @@ static int http_open(URLContext *h, const char *uri, int flags,
         av_warn2(s,AVERROR(ENOMEM),"AVERROR(ENOMEM)");
         return AVERROR(ENOMEM);
     }
-    if (options)
-        av_dict_copy(&s->chained_options, *options, 0);
+    av_dict_set_int(options, "user_flag", s->user_flag, 0);
+    av_dict_set_int(options, "tt_opaque", s->tt_opaque, 0);
+    av_dict_copy(&s->chained_options, *options, 0);
 
     if (s->headers) {
         int len = strlen(s->headers);
@@ -922,7 +912,7 @@ static int http_open(URLContext *h, const char *uri, int flags,
         }
     }
 
-    av_dict_set_int(options, "user_flag", s->user_flag, 0);
+
     if (s->listen) {
         return http_listen(h, uri, flags, options);
     }
@@ -1380,14 +1370,12 @@ static int process_line(URLContext *h, char *line, int line_count,
                    !av_strncasecmp(p, "chunked", 7)) {
             s->filesize  = UINT64_MAX;
             s->chunksize = 0;
-#if !CONFIG_LITE
         } else if (!av_strcasecmp(tag, "WWW-Authenticate")) {
             ff_http_auth_handle_header(&s->auth_state, tag, p);
         } else if (!av_strcasecmp(tag, "Authentication-Info")) {
             ff_http_auth_handle_header(&s->auth_state, tag, p);
         } else if (!av_strcasecmp(tag, "Proxy-Authenticate")) {
             ff_http_auth_handle_header(&s->proxy_auth_state, tag, p);
-#endif
         } else if (!av_strcasecmp(tag, "Connection")) {
             if (!strcmp(p, "close"))
                 s->willclose = 1;
@@ -1415,7 +1403,6 @@ static int process_line(URLContext *h, char *line, int line_count,
                 av_warn2(h,ret,"ret:%d", ret);
                 return ret;
             }
-#if !CONFIG_LITE
         } else if (!av_strcasecmp(tag, "X-Loader-Type")) {
             av_log(h, AV_LOG_TRACE, "X-Loader-Type:%s\n", p);
             tt_network_info_callback(s->tt_opaque, IsLoaderType, 0, p);
@@ -1446,7 +1433,6 @@ static int process_line(URLContext *h, char *line, int line_count,
         else if (!av_strcasecmp(tag, "X-Loader-MDLFormatType")) {
             int mdl_format_type = strtoll(p, NULL, 10);
             av_log(h, AV_LOG_DEBUG, "mdl info format type:%d", mdl_format_type);
-#endif
         } else if (!av_strcasecmp(tag, "X-Cache-Status")) {
             av_log(h, AV_LOG_TRACE, "X-Cache-Status: %s\n", p);
             tt_network_info_callback(s->tt_opaque, IsCDNCacheStatus, (int64_t)s->user_flag, p);
@@ -1644,12 +1630,10 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     else
         method = post ? "POST" : "GET";
 
-#if !CONFIG_LITE
     authstr      = ff_http_auth_create_response(&s->auth_state, auth,
                                                 local_path, method);
     proxyauthstr = ff_http_auth_create_response(&s->proxy_auth_state, proxyauth,
                                                 local_path, method);
-#endif
     if (post && !s->post_data) {
         send_expect_100 = s->send_expect_100;
         /* The user has supplied authentication but we don't know the auth type,
@@ -1857,7 +1841,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
         if ((err = ffurl_write(s->hd, s->post_data, s->post_datalen)) < 0)
             goto done;
 
-    tt_network_info_callback(s->tt_opaque, IsHttpRepuestFinish, s->user_flag, NULL);
+    tt_network_log_callback(s->tt_opaque, IsHttpRepuestFinish, s->user_flag);
     /* init input buffer */
     s->buf_ptr          = s->buffer;
     s->buf_end          = s->buffer;
@@ -1882,7 +1866,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     if (err < 0)
         goto done;
 
-    tt_network_info_callback(s->tt_opaque, IsHttpResponseFinish, s->user_flag, NULL);
+    tt_network_log_callback(s->tt_opaque, IsHttpResponseFinish, s->user_flag);
 
     if (*new_location)
         s->off = off;
@@ -2286,10 +2270,8 @@ static int http_close(URLContext *h)
     int ret = 0;
     HTTPContext *s = h->priv_data;
 
-#if !CONFIG_LITE
     av_freep(&s->mdl_file_key);
     av_freep(&s->mdl_load_traceid);
-#endif
 #if CONFIG_ZLIB
     inflateEnd(&s->inflate_stream);
     av_freep(&s->inflate_buffer);
