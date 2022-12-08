@@ -912,7 +912,6 @@ static int http_open(URLContext *h, const char *uri, int flags,
         }
     }
 
-
     if (s->listen) {
         return http_listen(h, uri, flags, options);
     }
