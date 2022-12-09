@@ -46,6 +46,17 @@ int tt_register_avcodec(AVCodec *codec, int codec_size);
  */
 int tt_register_codec_parser(AVCodecParser *parser, const char *name, int parser_size);
 
+typedef struct AVBitStreamFilter AVBitStreamFilter;
+
+
+/**
+ * A custom AVBitStreamFilter register for private codec implementation
+ *
+ * @param bsf  pointer to AVBitStreamFilter, only support a samll set of codecs.
+ * @param bsf_size additional abi check, must be same as sizeof(AVBitStreamFilter)
+ * @return int Return 0 for success, others failed.
+ */
+int tt_register_bitstream_filter(AVBitStreamFilter *bsf, int bsf_size);
 
 typedef struct AVStreamInternal AVStreamInternal;
 
