@@ -36,6 +36,17 @@
  */
 int tt_register_avcodec(AVCodec *codec, int codec_size);
 
+/**
+ * A custom AVCodecParser register for private codec implementation
+ *
+ * @param parser  pointer to AVCodecParser, only support a samll set of codecs.
+ * @param name  name of the codec
+ * @param parser_size additional abi check, must be same as sizeof(AVCodecParser)
+ * @return int Return 0 for success, others failed.
+ */
+int tt_register_codec_parser(AVCodecParser *parser, const char *name, int parser_size);
+
+
 typedef struct AVStreamInternal AVStreamInternal;
 
 AVCodecContext *tt_avstream_get_avctx_from_internal(AVStreamInternal *internal);

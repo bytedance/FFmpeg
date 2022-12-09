@@ -20,6 +20,7 @@
  */
 
 #include "ttexport.h"
+#include "avcodec.h"
 #include "codec_id.h"
 #include <string.h>
 #include "libavformat/internal.h"
@@ -38,6 +39,27 @@ int tt_register_avcodec(AVCodec *codec, int codec_size)
             memcpy(&ff_bytevc2_decoder, codec, codec_size);
         } else if (strcmp(codec->name, "libbytevc1dec") == 0) {
             memcpy(&ff_bytevc1_decoder, codec, codec_size);
+        } else {
+            ret = -1;
+        }
+    }
+    return ret;
+}
+
+AVCodecParser ff_bvc1_parser = { .codec_ids = {0} };
+AVCodecParser ff_bvc2_parser = { .codec_ids = {0} };
+
+int tt_register_codec_parser(AVCodecParser *parser, const char *name, int parser_size)
+{
+    int ret = -1;
+    if (parser_size != sizeof(AVCodecParser))
+        return ret;
+    if (name) {
+        ret = 0;
+        if (strcmp(name, "bvc1") == 0) {
+            memcpy(&ff_bvc1_parser, parser, parser_size);
+        } else if (strcmp(name, "bvc2") == 0) {
+            memcpy(&ff_bvc2_parser, parser, parser_size);
         } else {
             ret = -1;
         }
