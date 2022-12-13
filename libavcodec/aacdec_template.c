@@ -3400,7 +3400,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
         ac->oc[1].status = OC_LOCKED;
     }
 
-    if (multiplier)
+    if (multiplier && !ac->fix_sbr_skip_samples)
         avctx->internal->skip_samples_multiplier = 2;
 
     if (!ac->frame->data[0] && samples) {
@@ -3551,6 +3551,7 @@ static const AVOption options[] = {
     {"main", "Select Main/Left channel", 0, AV_OPT_TYPE_CONST, {.i64= 1}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"sub" , "Select Sub/Right channel", 0, AV_OPT_TYPE_CONST, {.i64= 2}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"both", "Select both channels",     0, AV_OPT_TYPE_CONST, {.i64= 0}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
+    { "fix_sbr_skip_samples", "fix HE AAC SBR skip samples multiplier incorrect", offsetof(AACContext, fix_sbr_skip_samples), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1,  AACDEC_FLAGS},
 
     {NULL},
 };

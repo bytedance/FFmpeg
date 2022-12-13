@@ -351,7 +351,8 @@ struct AACContext {
     int force_dmono_mode;///< 0->not dmono, 1->use first channel, 2->use second channel
     int dmono_mode;      ///< 0->not dmono, 1->use first channel, 2->use second channel
     /** @} */
-
+    int fix_sbr_skip_samples;
+    
     DECLARE_ALIGNED(32, INTFLOAT, temp)[128];
 
     OutputConfiguration oc[2];
