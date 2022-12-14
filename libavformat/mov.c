@@ -5126,6 +5126,7 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     AVStream *ref_st = NULL;
     MOVStreamContext *sc, *ref_sc = NULL;
     AVRational timescale;
+    int has_reference_type_0 = 0;
 
     version = avio_r8(pb);
     if (version > 1) {
@@ -5181,20 +5182,23 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         uint32_t duration = avio_rb32(pb);
         if (size & 0x80000000) {
             avpriv_request_sample(c->fc, "sidx reference_type 1");
-            return AVERROR_PATCHWELCOME;
+            // return AVERROR_PATCHWELCOME;
+        } else {
+            avio_rb32(pb); // sap_flags
+            timestamp = av_rescale_q(pts, timescale, st->time_base);
+
+            index = update_frag_index(c, offset);
+            frag_stream_info = get_frag_stream_info(&c->frag_index, index, track_id);
+            if (frag_stream_info)
+                frag_stream_info->sidx_pts = timestamp;
+
+            if (av_sat_add64(offset, size) != offset + (uint64_t)size ||
+                av_sat_add64(pts, duration) != pts + (uint64_t)duration
+            ) {
+                return AVERROR_INVALIDDATA;
+            }
+            has_reference_type_0 = 1;
         }
-        avio_rb32(pb); // sap_flags
-        timestamp = av_rescale_q(pts, timescale, st->time_base);
-
-        index = update_frag_index(c, offset);
-        frag_stream_info = get_frag_stream_info(&c->frag_index, index, track_id);
-        if (frag_stream_info)
-            frag_stream_info->sidx_pts = timestamp;
-
-        if (av_sat_add64(offset, size) != offset + (uint64_t)size ||
-            av_sat_add64(pts, duration) != pts + (uint64_t)duration
-        )
-            return AVERROR_INVALIDDATA;
         offset += size;
         pts += duration;
     }
@@ -5208,7 +5212,7 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     // See if the remaining bytes are just an mfra which we can ignore.
     is_complete = offset == stream_size;
-    if (!is_complete && (pb->seekable & AVIO_SEEKABLE_NORMAL) && stream_size > 0 ) {
+    if (!c->enable_single_sidx_opt && !is_complete && (pb->seekable & AVIO_SEEKABLE_NORMAL) && stream_size > 0 ) {
         int64_t ret;
         int64_t original_pos = avio_tell(pb);
         if (!c->have_read_mfra_size) {
@@ -5223,7 +5227,7 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             is_complete = 1;
     }
 
-    if (is_complete) {
+    if ((c->enable_single_sidx_opt && has_reference_type_0) || is_complete) {    
         // Find first entry in fragment index that came from an sidx.
         // This will pretty much always be the first entry.
         for (i = 0; i < c->frag_index.nb_items; i++) {
@@ -5248,6 +5252,7 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 c->need_found_moof = 1;
             }
         }
+        // TODO: single stream + multi sidx
         c->frag_index.complete = (c->fc->nb_streams == 1 || offset == avio_size(pb));
     }
 
@@ -8867,6 +8872,8 @@ static const AVOption mov_options[] = {
         AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, FLAGS },
     { "audio_seek_pts", "audio seek pts", OFFSET(audio_seek_pts),
         AV_OPT_TYPE_INT64, { .i64 = AV_NOPTS_VALUE }, INT64_MIN, INT64_MAX, FLAGS },
+    { "enable_single_sidx_opt", "enable single sidx stream optimize", OFFSET(enable_single_sidx_opt),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
 
