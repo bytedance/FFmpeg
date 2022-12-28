@@ -37,6 +37,7 @@
 #include <openssl/err.h>
 
 static int openssl_init;
+static int openssl_data_index;
 
 typedef struct TLSContext {
     const AVClass *class;
@@ -97,6 +98,7 @@ int ff_openssl_init(void)
 #endif
         }
 #endif
+        openssl_data_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
     }
     openssl_init++;
     ff_unlock_avformat();
@@ -118,6 +120,7 @@ void ff_openssl_deinit(void)
             av_free(openssl_mutexes);
         }
 #endif
+        openssl_data_index = -1;
     }
     ff_unlock_avformat();
 }
@@ -306,6 +309,9 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         ret = AVERROR(EIO);
         goto fail;
     }
+    if((ret = SSL_set_ex_data(p->ssl, openssl_data_index, h))) {
+        av_log(h, AV_LOG_DEBUG, "set ex data fail");
+    }
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
     p->url_bio_method = BIO_meth_new(BIO_TYPE_SOURCE_SINK, "urlprotocol bio");
     BIO_meth_set_write(p->url_bio_method, url_bio_bwrite);
@@ -321,7 +327,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     bio->ptr = c->tcp;
 #endif
     SSL_set_bio(p->ssl, bio, bio);
-    if (!c->listen && !c->numerichost)
+    if (!c->listen)
         SSL_set_tlsext_host_name(p->ssl, c->host);
     ret = c->listen ? SSL_accept(p->ssl) : SSL_connect(p->ssl);
     if (ret == 0) {

@@ -68,6 +68,7 @@ int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AV
         snprintf(opts, sizeof(opts), "?listen=1");
 
     av_url_split(NULL, 0, NULL, 0, c->underlying_host, sizeof(c->underlying_host), &port, NULL, 0, uri);
+    c->port = port;
 
     p = strchr(uri, '?');
 
