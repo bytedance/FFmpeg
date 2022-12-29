@@ -337,7 +337,7 @@ OBJS-$(CONFIG_MODS_DEMUXER)              += mods.o
 OBJS-$(CONFIG_MOFLEX_DEMUXER)            += moflex.o
 OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o mov_esds.o \
                                             qtpalette.o replaygain.o
-OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o av1.o avc.o hevc.o vpcc.o \
+OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o av1.o avc.o hevc.o vpcc.o bytevc2.o \
                                             movenchint.o mov_chan.o rtp.o \
                                             movenccenc.o rawutils.o
 OBJS-$(CONFIG_MP2_MUXER)                 += rawenc.o
