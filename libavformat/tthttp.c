@@ -237,6 +237,7 @@ static const AVOption options[] = {
     { NULL }
 };
 static int is_ipv4(char* host);
+static int is_ipv6(char* host);
 #if DUMP_BITSTREAM
 static char stream_name[64] = {0};
 static void get_stream_name(const char* url, char* stream_name) {
@@ -343,7 +344,7 @@ static int http_change_hostname(HTTPContext*s) {
     ff_url_join(hoststr, sizeof(hoststr), NULL, NULL, hostname, port, NULL);
     av_log(NULL, AV_LOG_DEBUG, "hostname %s",hostname);
     
-    if (s->quic_keep_host && is_ipv4(hostname)) {
+    if (s->quic_keep_host && (is_ipv4(hostname || is_ipv6(hostname)))) {
         return 0;
     }
     new_host_len = strlen(hoststr);
@@ -398,6 +399,15 @@ static int is_ipv4(char* host) {
             return 0;
 
     return 1;
+}
+
+static int is_ipv6(char* host) {
+    if (!host || strlen(host) <= 1) {
+        return 0;
+    }
+
+    struct in6_addr dst;
+    return inet_pton(AF_INET6, host, &dst) == 1;
 }
 
 static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
