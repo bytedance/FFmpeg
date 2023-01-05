@@ -30,3 +30,6 @@ void register_mdl_info_context(MDLInfoCallBackContext *context);
 void mdl_info_register_handle(void *handle);
 int64_t mdl_info_get_int64_value(void *fileKey, int key, int64_t extraParamter);
 int64_t mdl_info_set_int64_value(void *traceId, int key, int64_t handle);
+
+
+void tt_register_mdlctx(MDLInfoCallBackContext *context);

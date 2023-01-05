@@ -91,14 +91,13 @@ typedef struct HTTPContext {
     URLContext *hd;
     aptr_t aptr;
     aptr_t gsc;
-    aptr_t cbptr;
     char  host_ip[132];
     unsigned char buffer[BUFFER_SIZE], *buf_ptr, *buf_end;
     int line_count;
     int http_code;
     /* Used if "Transfer-Encoding: chunked" otherwise -1. */
     uint64_t chunksize;
-    uint64_t off, end_off, filesize;
+    uint64_t off, end_off, external_end_offset, filesize;
     char *location;
     HTTPAuthState auth_state;
     HTTPAuthState proxy_auth_state;
@@ -182,6 +181,7 @@ typedef struct HTTPContext {
     int mdl_format_type;
 #endif
     int rearguard;
+    int quic_keep_host;
 } HTTPContext;
 
 #define OFFSET(x) offsetof(HTTPContext, x)
@@ -193,7 +193,6 @@ static const AVOption options[] = {
     { "seekable", "control seekability of connection", OFFSET(seekable), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, D },
     { "aptr", "set log handle for log", OFFSET(aptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "gsc", "get socket pool", OFFSET(gsc), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
-    { "cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "chunked_post", "use chunked transfer-encoding for posts", OFFSET(chunked_post), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, E },
     { "http_proxy", "set HTTP proxy to tunnel through", OFFSET(http_proxy), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
     { "headers", "set custom HTTP headers, can override built in default headers", OFFSET(headers), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
@@ -216,7 +215,7 @@ static const AVOption options[] = {
     { "send_expect_100", "Force sending an Expect: 100-continue header for POST", OFFSET(send_expect_100), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
     { "location", "The actual location of the data received", OFFSET(location), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
     { "offset", "initial byte offset", OFFSET(off), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
-    { "end_offset", "try to limit the request to bytes preceding this offset", OFFSET(end_off), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
+    { "end_offset", "try to limit the request to bytes preceding this offset", OFFSET(external_end_offset), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
     { "method", "Override the HTTP method or set the expected HTTP method from a client", OFFSET(method), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
     { "reconnect", "auto reconnect after disconnect before EOF", OFFSET(reconnect), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "reconnect_at_eof", "auto reconnect at EOF", OFFSET(reconnect_at_eof), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
@@ -245,9 +244,11 @@ static const AVOption options[] = {
     { "mdl_format_type", "format type video or audio", OFFSET(mdl_format_type), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, D },
 #endif
     { "rearguard", "ios player rearguard version", OFFSET(rearguard), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, D},
+    { "quic_keep_host", "quic keep host when 302", OFFSET(quic_keep_host), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, D|E},
     { NULL }
 };
-
+static int is_ipv4(char* host);
+static int is_ipv6(char* host);
 #if DUMP_BITSTREAM
 static char stream_name[64] = {0};
 static void get_stream_name(const char* url, char* stream_name) {
@@ -319,15 +320,7 @@ static void http_save_tcp_hostname_of_ip(HTTPContext *s)
 }
 static void http_callback_request(URLContext *h, NetworkOpt req, const char* url) {
     HTTPContext *s = h->priv_data;
-    httpEvent_ctx ctx;
-    if (req == IsRequestStart) {
-        av_strlcpy(ctx.url, url, sizeof(ctx.url));
-        ctx.off= s->off;
-        ctx.end_off = s->end_off;
-        av_log(h, AV_LOG_DEBUG,"url is: %s", ctx.url);
-    }
-    ff_inetwork_info_callback(s->cbptr, s->aptr, IsHTTPReqCallback, req, (char*)(&ctx));
-
+    ff_inetwork_info_callback(0, s->aptr, IsHTTPReqCallback, req, NULL);
 }
 static void http_callback_info(URLContext *h) {
 #if !CONFIG_LITE
@@ -343,7 +336,7 @@ static void http_callback_info(URLContext *h) {
     info.mdl_load_traceid = s->mdl_load_traceid;
     //for callback. notice,it is Shallow copy!
     av_log(h, AV_LOG_DEBUG, "start callback mdl info");
-    ff_inetwork_info_callback(s->cbptr, s->aptr, IsMDLInfoCallBack, 0, (char*)(&info));
+    ff_inetwork_info_callback(0, s->aptr, IsMDLInfoCallBack, 0, (char*)(&info));
 #endif
 }
 
@@ -364,6 +357,9 @@ static int http_change_hostname(HTTPContext*s) {
     ff_url_join(hoststr, sizeof(hoststr), NULL, NULL, hostname, port, NULL);
     av_log(NULL, AV_LOG_DEBUG, "hostname %s",hostname);
     
+    if (s->quic_keep_host && (is_ipv4(hostname) || is_ipv6(hostname) )) {
+        return 0;
+    }
     new_host_len = strlen(hoststr);
     host_position = begin - s->headers;
     const char* end = av_strnstr(begin, "\r\n", strlen(s->headers)-host_position);
@@ -416,6 +412,15 @@ static int is_ipv4(char* host) {
             return 0;
 
     return 1;
+}
+
+static int is_ipv6(char* host) {
+    if (!host || strlen(host) <= 1) {
+        return 0;
+    }
+
+    struct in6_addr dst;
+    return inet_pton(AF_INET6, host, &dst) == 1;
 }
 
 static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
@@ -671,7 +676,7 @@ redo:
         memset(&s->auth_state, 0, sizeof(s->auth_state));
         attempts         = 0;
         location_changed = 0;
-        ff_inetwork_log_callback(s->cbptr, s->aptr, Is3xxHappen, s->user_flag);
+        ff_inetwork_log_callback(0, s->aptr, Is3xxHappen, s->user_flag);
         goto redo;
     }
     http_save_tcp_hostname_of_ip(s);
@@ -685,14 +690,14 @@ fail:
         return location_changed;
     }
     if (ret != 0) {
-        av_fatal(h, ret, s->buffer);
+        av_fatal(h, ret, "%s", s->buffer);
 	    return ret;
     }
     ret = ff_http_averror(s->http_code, AVERROR(EIO));
 	if ( ret == AVERROR(EIO) ) {
-		av_fatal(h, AVERROR_HTTP_DEFAULT_ERROR, s->buffer);
+		av_fatal(h, AVERROR_HTTP_DEFAULT_ERROR, "%s",  s->buffer);
 	} else {
-		av_fatal(h, ret, s->buffer);
+		av_fatal(h, ret, "%s", s->buffer);
 	}
     return ret;
 }
@@ -891,16 +896,14 @@ static int http_open(URLContext *h, const char *uri, int flags,
                      AVDictionary **options)
 {
     HTTPContext *s = h->priv_data;
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsHttpOpenStart, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsHttpOpenStart, s->user_flag);
     int ret;
 #if DUMP_BITSTREAM
     get_stream_name(uri, stream_name);
 #endif
-#if defined(__ANDROID__) || defined(__APPLE__)	
     pthread_mutex_init(&s->mutex ,NULL);
     pthread_cond_init(&s->cond,NULL);
     s->cond_waited = FALSE;
-#endif
     if( s->seekable == 1 )
         h->is_streamed = 0;
     else
@@ -937,6 +940,7 @@ static int http_open(URLContext *h, const char *uri, int flags,
     }
     //add for auto range mode
     //WARNING: this will change offset & end_offset.
+    s->end_off = s->external_end_offset;
     if (s->is_r_auto_range && s->auto_range_offset > 0) {
         if (!s->off && !s->end_off) {
             s->end_off = s->auto_range_offset;
@@ -1046,7 +1050,7 @@ static int parse_location(HTTPContext *s, const char *p)
     }
     av_free(s->location);
     s->location = new_loc;
-    
+    ff_inetwork_info_callback(0, s->aptr, IsRedirectURL, 0, new_loc);
     if (s->headers != NULL && has_header(s->headers, "\r\nHost:")) {
         http_change_hostname(s);
     }
@@ -1426,10 +1430,10 @@ static int process_line(URLContext *h, char *line, int line_count,
 #if !CONFIG_LITE
         } else if (!av_strcasecmp(tag, "X-Loader-Type")) {
             av_log(h, AV_LOG_TRACE, "X-Loader-Type:%s\n", p);
-            ff_inetwork_info_callback(s->cbptr, s->aptr, IsLoaderType, 0, p);
+            ff_inetwork_info_callback(0, s->aptr, IsLoaderType, 0, p);
         } else if (!av_strcasecmp(tag, "X-Conn-Info")) {
             av_log(h, AV_LOG_TRACE, "X-Conn-Info: %s\n", p);
-            ff_inetwork_info_callback(s->cbptr, s->aptr, IsConnectionInfo, (int64_t)s->user_flag, p);
+            ff_inetwork_info_callback(0, s->aptr, IsConnectionInfo, (int64_t)s->user_flag, p);
         } else if(!av_strcasecmp(tag, "X-Loader-FKey")) {
             av_freep(&s->mdl_file_key);
             s->mdl_file_key = (char *) av_mallocz(strlen(p) + 1);
@@ -1455,6 +1459,12 @@ static int process_line(URLContext *h, char *line, int line_count,
             int mdl_format_type = strtoll(p, NULL, 10);
             av_log(h, AV_LOG_DEBUG, "mdl info format type:%d", mdl_format_type);
 #endif
+        } else if (!av_strcasecmp(tag, "X-Cache-Status")) {
+            av_log(h, AV_LOG_TRACE, "X-Cache-Status: %s\n", p);
+            ff_inetwork_info_callback(0, s->aptr, IsCDNCacheStatus, (int64_t)s->user_flag, p);
+        } else if (!av_strcasecmp(tag, "X-Response-Timecost")) {
+            av_log(h, AV_LOG_TRACE, "X-Response-Timecost: %s\n", p);
+            ff_inetwork_info_callback(0, s->aptr, IsCDNTimingInfo, (int64_t)s->user_flag, p);
         }
     }
     return 1;
@@ -1591,7 +1601,7 @@ static int http_read_header(URLContext *h, int *new_location)
 
         err = process_line(h, line, s->line_count, new_location);
         if (err < 0) {
-            av_fatal(h, err, line);
+            av_fatal(h, err, "%s", line);
             return err;
         }
         if (err == 0)
@@ -1599,9 +1609,7 @@ static int http_read_header(URLContext *h, int *new_location)
         s->line_count++;
     }
 
-#if defined(__ANDROID__) || defined(__APPLE__)	
-    ff_inetwork_info_callback(s->cbptr, s->aptr, IsGetResponseHeaders, 0, s->buffer);
-#endif
+    ff_inetwork_info_callback(0, s->aptr, IsGetResponseHeaders, 0, s->buffer);
 
     if (s->report_response_headers && len > 0) {
         av_fatal(h, 0, "response headers: %s\n", headers);
@@ -1861,7 +1869,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
         if ((err = ffurl_write(s->hd, s->post_data, s->post_datalen)) < 0)
             goto done;
 
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsHttpRepuestFinish, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsHttpRepuestFinish, s->user_flag);
     /* init input buffer */
     s->buf_ptr          = s->buffer;
     s->buf_end          = s->buffer;
@@ -1886,7 +1894,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     if (err < 0)
         goto done;
 
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsHttpResponseFinish, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsHttpResponseFinish, s->user_flag);
 
     if (*new_location)
         s->off = off;
@@ -2260,18 +2268,16 @@ static int http_shutdown(URLContext *h, int flags)
     int ret = 0;
     HTTPContext *s = h->priv_data;
     if(flags & AVIO_FLAG_STOP) {
-#if defined(__ANDROID__) || defined(__APPLE__)	
-	   if(pthread_mutex_trylock(&s->mutex) == 0) {
-		if(s->cond_waited) {
-		   pthread_cond_signal(&s->cond);
-	   	}
-		pthread_mutex_unlock(&s->mutex);
-	}
+        if(pthread_mutex_trylock(&s->mutex) == 0) {
+            if(s->cond_waited) {
+                pthread_cond_signal(&s->cond);
+            }
+		    pthread_mutex_unlock(&s->mutex);
+	    }
 #if defined(__APPLE__)
-    if(s->hd != NULL && s->hd->prot->url_shutdown != NULL){
-        s->hd->prot->url_shutdown(s->hd,flags);
-    }
-#endif
+        if(s->hd != NULL && s->hd->prot->url_shutdown != NULL){
+            s->hd->prot->url_shutdown(s->hd,flags);
+        }
 #endif
 	    return 0;
     }
@@ -2308,11 +2314,9 @@ static int http_close(URLContext *h)
     if (s->hd){
         ffurl_closep(&s->hd);
     }
-#if defined(__ANDROID__) || defined(__APPLE__)
     pthread_mutex_destroy(&s->mutex);
     pthread_cond_destroy(&s->cond);
     av_dict_free(&s->chained_options);
-#endif
 #if DUMP_BITSTREAM
     if (s->file) {
         fclose(s->file);
@@ -2348,12 +2352,7 @@ static void http_sleep(URLContext* h,int millsecond) {
     s->cond_waited = FALSE;
     pthread_mutex_unlock(&s->mutex);
 }
-static void close_auto_range(HTTPContext *s, int reset_endoff) {
-    s->is_r_auto_range = 0;
-    s->r_cache_mode = 0;
-    if (reset_endoff)
-        s->end_off = 0;
-}
+
 static int64_t http_seek_internal(URLContext *h, int64_t off, int whence, int force_reconnect)
 {
     HTTPContext *s = h->priv_data;
@@ -2375,8 +2374,12 @@ static int64_t http_seek_internal(URLContext *h, int64_t off, int whence, int fo
         return s->recv_size;
     } else if(whence == AVSEEK_RESET_AUTO_RANGE) {
         av_log(h, AV_LOG_DEBUG, "external disable auto range");
-        close_auto_range(s, 0);
+        s->is_r_auto_range = 0;
+        s->r_cache_mode = 0;
         return s->is_r_auto_range;
+    } else if (whence == AVSEEK_DOWNLOAD_OFFSET) {
+        // TODO: get socket download offset
+        return -1;
     }
     else if (!force_reconnect &&
              ((whence == SEEK_CUR && off == 0) ||
@@ -2400,9 +2403,13 @@ static int64_t http_seek_internal(URLContext *h, int64_t off, int whence, int fo
         return AVERROR(EINVAL);
     }
     if (!force_reconnect) {
-        av_log(h, AV_LOG_DEBUG, "http seek reset auto range");
-        //reset auto_range modification
-        close_auto_range(s, 1);
+        // call by upper layer, need reset auto range and end offset
+        if (s->is_r_auto_range) {
+            s->is_r_auto_range = 0;
+            s->r_cache_mode = 0;
+            av_log(h, AV_LOG_DEBUG, "http seek reset auto range");
+        }
+        s->end_off = s->external_end_offset;
     }
     s->off = off;
 
@@ -2610,10 +2617,8 @@ static int http_proxy_close(URLContext *h)
     HTTPContext *s = h->priv_data;
     if (s->hd)
         ffurl_closep(&s->hd);
-#if defined(__ANDROID__) || defined(__APPLE__)
     pthread_mutex_destroy(&s->mutex);
     pthread_cond_destroy(&s->cond);
-#endif
     return 0;
 }
 

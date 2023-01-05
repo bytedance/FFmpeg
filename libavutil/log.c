@@ -49,6 +49,8 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 #define LINE_SZ 1024
+#define AV_LOG_LEVEL_INVALID INT32_MIN
+#define FATAL_CODE_INVALID INT32_MIN
 
 #if HAVE_VALGRIND_VALGRIND_H
 #include <valgrind/valgrind.h>
@@ -58,6 +60,9 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int av_log_level = AV_LOG_INFO;
 static int flags;
+
+static __thread int av_log_tls_level = AV_LOG_LEVEL_INVALID;
+static __thread void (*av_log_tls_callback)(void*, int, int, const char*, va_list) = NULL;
 
 #define NB_LEVELS 8
 #if defined(_WIN32) && !defined(__MINGW32CE__) && HAVE_SETCONSOLETEXTATTRIBUTE
@@ -381,27 +386,51 @@ void av_logx(void* avcl, int level, const char *fmt, ...)
     va_end(vl);
 }
 
+void av_log(void *avcl, int level, const char *fmt, ...)
+{
+    int log_level = av_log_level;
+    if(av_log_tls_level != AV_LOG_LEVEL_INVALID) {
+        log_level = av_log_tls_level;
+    } else {
+        AVClass *avc = avcl ? *(AVClass **) avcl : NULL;
+        if (avc && avc->get_aptr &&
+            avc->get_aptr(avcl)) {
+            log_level = ((LogWrapper *) (avc->get_aptr(avcl)))->logLevel;
+        }
+    }
+
+    if(level > log_level)
+        return;
+
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    va_list vl;
+    va_start(vl, fmt);
+    if (avc && avc->version >= (50 << 16 | 15 << 8 | 2) &&
+        avc->log_level_offset_offset && level >= AV_LOG_FATAL)
+        level += *(int *) (((uint8_t *) avcl) + avc->log_level_offset_offset);
+    av_vlog(avcl, level, fmt, vl);
+    va_end(vl);
+}
+
 void av_ll(void *avcl, int level, const char* file_name, const char* function_name, int line_num, const char *fmt, ...) {
     const int size = 512;
     char logbuffer[512];
     int print_prefix = 0;
-    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
-    int log_level = av_log_level;
-    if (avc && avc->get_aptr &&
-        avc->get_aptr(avcl)) {
-        log_level = ((LogWrapper*)(avc->get_aptr(avcl)))->logLevel;
-    }
-    if(level > log_level)
-        return;
 
     va_list vl;
     va_start(vl, fmt);
     av_log_format_line(avcl, level, fmt, vl, logbuffer, size, &print_prefix);
     va_end(vl);
-    av_logx(avcl, level, "<%s %s %d> %s", file_name, function_name, line_num, logbuffer);
+    av_log(avcl, level, "<%s %s %d> %s", file_name, function_name, line_num, logbuffer);
 }
+
 void av_vlog(void* avcl, int level, const char *fmt, va_list vl)
 {
+    if(av_log_tls_callback) {
+        av_log_tls_callback(avcl, level, FATAL_CODE_INVALID, fmt, vl);
+        return;
+    }
+
     AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
     void (*log_callback)(void*, int, const char*, va_list) = av_log_callback;
     if (avc && avc->get_aptr &&
@@ -411,6 +440,34 @@ void av_vlog(void* avcl, int level, const char *fmt, va_list vl)
     if (log_callback)
         log_callback(avcl, level, fmt, vl);
 }
+
+void av_logc(void *avcl, int level, int code, const char *fmt, ...) {
+    if(av_log_tls_callback) {
+        va_list vl;
+        va_start(vl, fmt);
+        av_log_tls_callback(avcl, level, code, fmt, vl);
+        va_end(vl);
+        return ;
+    }
+
+    const int size = 512;
+    char logbuffer[512];
+    va_list vl;
+    va_start(vl, fmt);
+    vsnprintf(logbuffer, size, fmt, vl);
+    va_end(vl);
+
+    void (*log_fatal_callback)(void*, int, int, const char*) = NULL;
+    AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
+    if (avc && avc->get_aptr &&
+        avc->get_aptr(avcl)) {
+        log_fatal_callback = ((LogWrapper*)(avc->get_aptr(avcl)))->log_fatal_callback;
+    }
+    if( log_fatal_callback != NULL ) {
+        log_fatal_callback(avcl, level, code, logbuffer);
+    }
+}
+
 void av_log_fatal(void *avcl, int type, int code, const char* file, const char* function, int line, const char *fmt, ...) {
     const int size = 512;
     char logbuffer[512];
@@ -422,6 +479,13 @@ void av_log_fatal(void *avcl, int type, int code, const char* file, const char* 
     va_end(vl);
 
     snprintf(retbuf, size, "<%s,%s,%d>%s\n", file, function, line, logbuffer);
+
+    if(av_log_tls_callback) {
+        va_list empty_va_list;
+        av_log_tls_callback(avcl, type, code, retbuf, empty_va_list);
+        return;
+    }
+
     void (*log_fatal_callback)(void*, int, int, const char*) = NULL;
     AVClass* avc = avcl ? *(AVClass **) avcl : NULL;
     if (avc && avc->get_aptr &&
@@ -459,6 +523,16 @@ int av_log_get_flags(void)
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list))
 {
     av_log_callback = callback;
+}
+
+void av_log_set_tls_callback(void (*callback)(void*, int, int, const char*, va_list))
+{
+    av_log_tls_callback = callback;
+}
+
+void av_log_set_tls_level(int level)
+{
+    av_log_tls_level = level;
 }
 
 static void missing_feature_sample(int sample, void *avc, const char *msg,

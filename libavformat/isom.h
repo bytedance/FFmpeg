@@ -306,9 +306,7 @@ typedef struct MOVContext {
     int enable_drm;
     int drm_downgrade;
     int64_t drm_aptr;
-    int64_t cbptr;
     void *drm_ctx;
-    int hijack_exit;
     int ignore_mdat;
     int individually_eof;
     int handle_header_error;
@@ -322,6 +320,10 @@ typedef struct MOVContext {
     int enable_mp4_check;
     int64_t last_test_sample_pos;
     int64_t max_pos_back_diff;
+    int64_t audio_seek_pts;
+    int need_found_moof;
+    int found_moof;
+    int is_fmp4;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);

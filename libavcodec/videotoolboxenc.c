@@ -120,7 +120,72 @@ static void loadVTEncSymbols(){
             "RequireHardwareAcceleratedVideoEncoder");
 }
 
+typedef enum VT_H264Profile {
+    H264_PROF_AUTO,
+    H264_PROF_BASELINE,
+    H264_PROF_MAIN,
+    H264_PROF_HIGH,
+    H264_PROF_EXTENDED,
+    H264_PROF_COUNT
+} VT_H264Profile;
+
+typedef enum VTH264Entropy{
+    VT_ENTROPY_NOT_SET,
+    VT_CAVLC,
+    VT_CABAC
+} VTH264Entropy;
+
 static const uint8_t start_code[] = { 0, 0, 0, 1 };
+
+typedef struct ExtraSEI {
+  void *data;
+  size_t size;
+} ExtraSEI;
+
+typedef struct BufNode {
+    CMSampleBufferRef cm_buffer;
+    ExtraSEI *sei;
+    struct BufNode* next;
+    int error;
+} BufNode;
+
+typedef struct VTEncContext {
+    AVClass *class;
+    enum AVCodecID codec_id;
+    VTCompressionSessionRef session;
+    CFStringRef ycbcr_matrix;
+    CFStringRef color_primaries;
+    CFStringRef transfer_function;
+
+    pthread_mutex_t lock;
+    pthread_cond_t  cv_sample_sent;
+
+    int async_error;
+
+    BufNode *q_head;
+    BufNode *q_tail;
+
+    int64_t frame_ct_out;
+    int64_t frame_ct_in;
+
+    int64_t first_pts;
+    int64_t dts_delta;
+
+    int64_t profile;
+    int64_t level;
+    int64_t entropy;
+    int64_t realtime;
+    int64_t frames_before;
+    int64_t frames_after;
+
+    int64_t allow_sw;
+    int64_t require_sw;
+
+    bool flushing;
+    bool has_b_frames;
+    bool warned_color_range;
+    bool a53_cc;
+} VTEncContext;
 
 static int vtenc_populate_extradata(AVCodecContext   *avctx,
                                     CMVideoCodecType codec_type,
@@ -910,12 +975,9 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         CFRelease(one_second);
         return AVERROR(ENOMEM);
     }
-
-    if (vtctx->enableRateLimits) {
-        status = VTSessionSetProperty(vtctx->session,
-                                    kVTCompressionPropertyKey_DataRateLimits,
-                                    data_rate_limits);
-    }
+    status = VTSessionSetProperty(vtctx->session,
+                                  kVTCompressionPropertyKey_DataRateLimits,
+                                  data_rate_limits);
 
     CFRelease(bytes_per_second);
     CFRelease(one_second);
@@ -935,16 +997,16 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         }
     }
 
-    if (vtctx->maxKeyFrameIntervalDuration > 0) {
+    if (avctx->gop_size > 0) {
         CFNumberRef interval = CFNumberCreate(kCFAllocatorDefault,
-                                              kCFNumberDoubleType,
-                                              &vtctx->maxKeyFrameIntervalDuration);
+                                              kCFNumberIntType,
+                                              &avctx->gop_size);
         if (!interval) {
             return AVERROR(ENOMEM);
         }
 
         status = VTSessionSetProperty(vtctx->session,
-                                      kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+                                      kVTCompressionPropertyKey_MaxKeyFrameInterval,
                                       interval);
         CFRelease(interval);
 

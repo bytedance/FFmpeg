@@ -95,6 +95,8 @@ int ffio_init_context(AVIOContext *s,
                   int (*write_packet)(void *opaque, uint8_t *buf, int buf_size),
                   int64_t (*seek)(void *opaque, int64_t offset, int whence))
 {
+    memset(s, 0, sizeof(AVIOContext));
+    
     s->buffer      = buffer;
     s->orig_buffer_size =
     s->buffer_size = buffer_size;
@@ -282,6 +284,12 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
         short_seek = s->short_seek_threshold;
 
     offset1 = offset - pos; // "offset1" is the relative offset from the beginning of s->buffer
+    int priv_direct = 0;
+    if (s->av_class) {
+        int64_t priv_direct_value = 0;
+        av_opt_get_int(s, "priv_direct", AV_OPT_SEARCH_CHILDREN, &priv_direct_value);
+        priv_direct = s->direct && priv_direct_value;
+    }
     if (!s->must_flush && (!s->direct || !s->seek) &&
         offset1 >= 0 && offset1 <= buffer_size - s->write_flag) {
         /* can do the seek inside the buffer */
@@ -298,7 +306,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
             return AVERROR_EOF;
         }
         s->buf_ptr = s->buf_end - (s->pos - offset);
-    } else if(!s->write_flag && offset1 < 0 && -offset1 < buffer_size>>1 && s->seek && offset > 0) {
+    } else if(!s->write_flag && offset1 < 0 && -offset1 < buffer_size>>1 && s->seek && offset > 0 && !priv_direct) {
         int64_t res;
 
         pos -= FFMIN(buffer_size>>1, pos);
@@ -562,7 +570,7 @@ static void fill_buffer(AVIOContext *s)
 
     /* make buffer smaller in case it ended up large after probing */
     if (s->read_packet && s->orig_buffer_size && s->buffer_size > s->orig_buffer_size) {
-        if (dst == s->buffer) {
+        if (dst == s->buffer && s->buf_ptr != dst) {
             int ret = ffio_set_buf_size(s, s->orig_buffer_size);
             if (ret < 0)
                 av_log(s, AV_LOG_WARNING, "Failed to decrease buffer size\n");
@@ -768,6 +776,11 @@ int ffio_read_partial(AVIOContext *s, unsigned char *buf, int size)
         if (avio_feof(s))  return AVERROR_EOF;
     }
     return size1 - size;
+}
+
+int avio_read_partial(AVIOContext *s, unsigned char *buf, int size)
+{
+    return ffio_read_partial(s, buf, size);
 }
 
 unsigned int avio_rl16(AVIOContext *s)
@@ -1508,4 +1521,13 @@ int avio_close_autorange(AVIOContext *s) {
     if (!s->seek)
         return AVERROR(ENOSYS);
     return s->seek(s->opaque, 0, AVSEEK_RESET_AUTO_RANGE);
+}
+int64_t avio_get_download_offset(AVIOContext *s)
+{
+    if (!s)
+        return AVERROR(EINVAL);
+
+    if (!s->seek)
+        return AVERROR(ENOSYS);
+    return s->seek(s->opaque, 0, AVSEEK_DOWNLOAD_OFFSET);
 }

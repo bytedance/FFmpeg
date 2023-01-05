@@ -30,6 +30,8 @@ HEADERS = avcodec.h                                                     \
           vda_vt_internal.h                                             \
           parser.h                                                      \
           bsf.h                                                         \
+          ttexport.h                                                    \
+          audio_frame_queue.h                                           \
 
 OBJS = allcodecs.o                                                      \
        avpacket.o                                                       \
@@ -43,6 +45,7 @@ OBJS = allcodecs.o                                                      \
        parser.o                                                         \
        raw.o                                                            \
        utils.o                                                          \
+       ttexport.o                                                       \
 
 OBJS-$(!CONFIG_LITE) += audioconvert.o                                                   \
                         avdct.o                                                          \

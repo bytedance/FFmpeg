@@ -38,10 +38,8 @@ static pthread_mutex_t g_xml_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define INITIAL_BUFFER_SIZE 32768
 
 typedef int (*probeBitrate)(aptr_t handle, int current_bitrate);
-typedef void (*updateMediaInfo)(int *bitrates,int bitrate_levels);
 typedef struct getABRStrategyCtx{
     probeBitrate caculateBitrate;
-    updateMediaInfo updateInfo;
 }getABRStrategyCtx;
 
 struct fragment {
@@ -179,7 +177,6 @@ typedef struct DASHContext {
 
     int is_live;
     AVIOInterruptCB *interrupt_callback;
-    int hijack_exit;
     char *decryption_key;
     char *allowed_extensions;
     AVDictionary *avio_opts;
@@ -191,7 +188,6 @@ typedef struct DASHContext {
     
     aptr_t aptr;
     aptr_t abr;
-    aptr_t cbptr;
 
     int drm_downgrade;
     int64_t drm_aptr;
@@ -1133,10 +1129,10 @@ static int parse_manifest_representation(AVFormatContext *s, const char *url,
 #if CONFIG_DRM
         if (rep->cenc_default_kid) {
             c->drm_ctx = (void *) (intptr_t) c->drm_aptr;
-            if (c->drm_ctx && (av_idrm_open(c->cbptr, c->drm_ctx, rep->cenc_default_kid) != 0)) {
+            if (c->drm_ctx && (av_drm_open(c->drm_ctx, rep->cenc_default_kid) != 0)) {
                 av_fatal(s, AVERROR_DRM_OPEN_FAILED, "drm open failed\n");
                 if (c->drm_aptr == 0) {
-                    av_idrm_close(c->cbptr, c->drm_ctx);
+                    av_drm_close(c->drm_ctx);
                     av_freep(&c->drm_ctx);
                 }
                 c->drm_ctx = NULL;
@@ -1949,7 +1945,7 @@ end:
 static int save_avio_options(AVFormatContext *s)
 {
     DASHContext *c = s->priv_data;
-    const char *opts[] = { "headers", "user_agent", "cookies", "reconnect", "reconnect_count", "reconnect_delay_max", "timeout", "aptr", "cbptr", "gsc", "multiple_requests", NULL }, **opt = opts;
+    const char *opts[] = { "headers", "user_agent", "cookies", "reconnect", "reconnect_count", "reconnect_delay_max", "timeout", "aptr", "gsc", "multiple_requests", NULL }, **opt = opts;
     uint8_t *buf = NULL;
     int ret = 0;
 
@@ -2039,7 +2035,7 @@ static int reopen_demux_for_component(AVFormatContext *s, struct representation 
     pls->ctx->io_open  = nested_io_open;
     pls->ctx->aptr = s->aptr;
 
-    av_dict_set_int(&in_fmt_opts, "cbptr", c->cbptr, 0);
+
     // provide additional information from mpd if available
     if (c->decryption_key) {
         av_dict_set(&in_fmt_opts,"decryption_key",c->decryption_key,0);
@@ -2121,7 +2117,6 @@ static int open_demux_for_component(AVFormatContext *s, struct representation *p
         }
     }
     av_dict_copy(&s->metadata, pls->ctx->metadata, 0);
-    s->hijack_code = pls->ctx->hijack_code;
     pls->is_opened = 1;
 
     return 0;
@@ -2303,16 +2298,6 @@ static int dash_read_header(AVFormatContext *s)
         }
     }
     
-    if (c->abr) {
-        getABRStrategyCtx *abr = (getABRStrategyCtx *)c->abr;
-        int bitrates[10] = {0};
-        int i = 0;
-        for (; i < c->n_videos; i++) {
-            bitrates[i] = c->videos[i]->bandwidth;
-        }
-        abr->updateInfo(bitrates,c->n_videos);
-    }
-
     return 0;
 fail:
     free_audio_list(c);
@@ -2597,7 +2582,7 @@ static int dash_close(AVFormatContext *s)
     av_freep(&c->base_url);
 #if CONFIG_DRM
     if (c->drm_aptr == 0) {
-        av_idrm_close(c->cbptr, c->drm_ctx);
+        av_drm_close(c->drm_ctx);
         av_freep(&c->drm_ctx);
     }
     c->drm_ctx = NULL;
@@ -2772,7 +2757,6 @@ static const AVOption dash_options[] = {
         OFFSET(allowed_extensions), AV_OPT_TYPE_STRING,
         {.str = "aac,m4a,m4s,m4v,mov,mp4"},
         INT_MIN, INT_MAX, D},
-    {"hijack_exit", "hijack exit", OFFSET(hijack_exit), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, D },
     {"decryption_key", "The media decryption key (hex)", OFFSET(decryption_key), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D},
     {"cur_video_bitrate", "the bitrate of video stream",
         OFFSET(cur_video_bitrate), AV_OPT_TYPE_INT,
@@ -2788,7 +2772,6 @@ static const AVOption dash_options[] = {
         0, INT_MAX, D},
     { "aptr", "set app ptr for ffmpeg", OFFSET(aptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "abr", "get abr strategy", OFFSET(abr),  AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
-    { "cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E},
     { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
     { "drm_aptr", "drm aptr", OFFSET(drm_aptr), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, D },
     { "radio_mode", "radio mode (audio only)", OFFSET(radio_mode), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, D },

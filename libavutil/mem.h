@@ -206,12 +206,7 @@ void *av_mallocz(size_t size) av_malloc_attrib av_alloc_size(1);
  *         be allocated
  * @see av_malloc()
  */
-av_alloc_size(1, 2) static inline void *av_malloc_array(size_t nmemb, size_t size)
-{
-    if (!size || nmemb >= INT_MAX / size)
-        return NULL;
-    return av_malloc(nmemb * size);
-}
+av_alloc_size(1, 2) void *av_malloc_array(size_t nmemb, size_t size);
 
 /**
  * Allocate a memory block for an array with av_mallocz().

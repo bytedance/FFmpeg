@@ -17,6 +17,11 @@ void register_mdl_info_context(MDLInfoCallBackContext *context) {
     }
 }
 
+void tt_register_mdlctx(MDLInfoCallBackContext *context)
+{
+    register_mdl_info_context(context);
+}
+
 void mdl_info_register_handle(void *handle) {
     if (gMDLInfoCallBackContext.registerHandle) {
         gMDLInfoCallBackContext.registerHandle(handle);

@@ -30,19 +30,28 @@
 #include "libavutil/opt.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/time.h"
 #include "libavcodec/bytestream.h"
 #include "libavcodec/mpeg4audio.h"
 #include "avformat.h"
 #include "internal.h"
+#include "sample_aes.h"
 #include "avio_internal.h"
 #include "flv.h"
+#include "network.h"
 
 #define VALIDATE_INDEX_TS_THRESH 2500
 
 #define RESYNC_BUFFER_SIZE (1<<20)
 
+
+enum FlvKeyType {
+    KEY_NONE,
+    KEY_SAMPLE_AES
+};
 typedef struct FLVContext {
     const AVClass *class; ///< Class for private options.
+    aptr_t aptr;
     int trust_metadata;   ///< configure streams according onMetaData
     int wrong_dts;        ///< wrong dts due to negative cts
     uint8_t *new_extradata[FLV_STREAM_TYPE_NB];
@@ -71,9 +80,14 @@ typedef struct FLVContext {
     int missing_streams;
     AVRational framerate;
 
+    char *decryption_key;
+    enum FlvKeyType key_type;
+    CryptoContext crypto_ctx;
+
     int  check_corrupt_packet;
     int  skip_find_unnecessary_stream;
     int  head_flags;
+    int flv_speed_measurement;
 } FLVContext;
 
 static int probe(AVProbeData *p, int live)
@@ -630,6 +644,10 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
                     }
                 } else if (!strcmp(key, "metadatacreator") && !strcmp(str_val, "MEGA")) {
                     flv->broken_sizes = 1;
+                } else if (!strcmp(key, "encrypt_method")) {
+                    if (!strcmp(str_val, "SAMPLE-AES")) {
+                        flv->key_type = KEY_SAMPLE_AES;
+                    }
                 }
             }
         }
@@ -776,6 +794,10 @@ static int flv_read_close(AVFormatContext *s)
         av_freep(&flv->new_extradata[i]);
     av_freep(&flv->keyframe_times);
     av_freep(&flv->keyframe_filepositions);
+    av_freep(&flv->decryption_key);
+    if (flv->crypto_ctx.aes_ctx != NULL) {
+        av_free(flv->crypto_ctx.aes_ctx);
+    }
     return 0;
 }
 
@@ -1006,6 +1028,10 @@ retry:
 
         next = size + avio_tell(s->pb);
 
+        int64_t tag_start_time = 0;
+        if (flv->flv_speed_measurement && (type == FLV_TAG_TYPE_AUDIO || type == FLV_TAG_TYPE_VIDEO)) {
+            tag_start_time = av_gettime();
+        }
         if (type == FLV_TAG_TYPE_AUDIO) {
             stream_type = FLV_STREAM_TYPE_AUDIO;
             flags    = avio_r8(s->pb);
@@ -1237,6 +1263,14 @@ retry_duration:
     }
 
     ret = av_get_packet(s->pb, pkt, size);
+    if (flv->flv_speed_measurement && ret > 0 && tag_start_time != 0 && (stream_type == FLV_STREAM_TYPE_VIDEO || stream_type == FLV_STREAM_TYPE_AUDIO)) {
+        int64_t cur_time = av_gettime();
+        int64_t time_diff = cur_time - tag_start_time;
+        tag_start_time = 0;
+        char ret_str[16];
+        snprintf(ret_str, 16, "%d", ret);
+        ff_inetwork_info_callback(0, flv->aptr, stream_type == FLV_STREAM_TYPE_VIDEO ? IsFlvVideoTagInfo : IsFlvAudioTagInfo, time_diff, ret_str);
+    }
     if (ret < 0)
         return ret;
     
@@ -1267,6 +1301,16 @@ retry_duration:
             stream_type == FLV_STREAM_TYPE_DATA)
         pkt->flags |= AV_PKT_FLAG_KEY;
 
+    if (flv->decryption_key && flv->key_type == KEY_SAMPLE_AES) {
+
+        if(flv->crypto_ctx.aes_ctx==NULL){
+            flv->crypto_ctx.aes_ctx = av_aes_alloc();
+        }
+        memcpy(flv->crypto_ctx.key, flv->decryption_key, 16);
+        memcpy(flv->crypto_ctx.iv, DEFAULT_IV, 16);
+        enum AVCodecID codec_id=s->streams[pkt->stream_index]->codecpar->codec_id;
+        ff_flv_senc_decrypt_frame(codec_id, &flv->crypto_ctx, pkt);
+    }
      // packet reading corrupt   
     // av_log(s, AV_LOG_DEBUG, "check_corrupt_packet:%d\n", flv->check_corrupt_packet);
     if (flv->check_corrupt_packet && (pkt->flags & AV_PKT_FLAG_CORRUPT))
@@ -1303,9 +1347,12 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 #define E AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     { "flv_metadata", "Allocate streams according to the onMetaData array", OFFSET(trust_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
+    { "aptr", "set log handle for log", OFFSET(aptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "check_corrupt_packet", "enable check_corrupt_packet",          OFFSET(check_corrupt_packet), AV_OPT_TYPE_INT, { .i64 = 0},       0, INT_MAX, .flags = D|E },
     { "skip_find_unnecessary_stream", "skip find unnecessary stream", OFFSET(skip_find_unnecessary_stream), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = D|E},
+    { "decryption_key", "the media decryption key", OFFSET(decryption_key), AV_OPT_TYPE_STRING, { .str = NULL }, INT_MIN, INT_MAX, .flags = D|E },
+    { "flv_speed_measurement", "enable flv tag-based speed measurement", OFFSET(flv_speed_measurement), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = D|E },
     { NULL }
 };
 

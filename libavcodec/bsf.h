@@ -39,6 +39,13 @@ int ff_bsf_get_packet(AVBSFContext *ctx, AVPacket **pkt);
  */
 int ff_bsf_get_packet_ref(AVBSFContext *ctx, AVPacket *pkt);
 
+/**
+ * Called by the bitstream filters to get the next packet for filtering.
+ * The filter is responsible for either freeing the packet or passing it to the
+ * caller.
+ */
+int av_bsf_get_packet(AVBSFContext *ctx, AVPacket **pkt);
+
 const AVClass *ff_bsf_child_class_next(const AVClass *prev);
 
 #endif /* AVCODEC_BSF_H */

@@ -82,6 +82,7 @@ HEADERS = adler32.h                                                     \
           reverse.h                                                     \
           mdl_info_wrapper.h                                            \
           ttmapp.h                                                      \
+          ttexport.h                                                    \
 
 HEADERS-$(CONFIG_LZO)                   += lzo.h
 
@@ -128,6 +129,10 @@ OBJS = avstring.o                                                       \
        timecode.o                                                       \
        utils.o                                                          \
        ttmapp.o                                                         \
+       intmath.o                                                        \
+       mdl_info_wrapper.o                                               \
+       ttexport.o                                                       \
+
 
 OBJS-$(!CONFIG_LITE) += aes.o                          \
                         aes_ctr.o                      \
@@ -143,7 +148,6 @@ OBJS-$(!CONFIG_LITE) += aes.o                          \
                         hash.o                         \
                         hmac.o                         \
                         integer.o                      \
-                        intmath.o                      \
                         lls.o                          \
                         murmur3.o                      \
                         rc4.o                          \
@@ -157,7 +161,6 @@ OBJS-$(!CONFIG_LITE) += aes.o                          \
                         twofish.o                      \
                         xtea.o                         \
                         tea.o                          \
-                        mdl_info_wrapper.o             \
                         audio_fifo.o                   \
                         lfg.o                          \
                         float_dsp.o                    \

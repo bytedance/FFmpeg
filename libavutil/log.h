@@ -254,7 +254,7 @@ typedef struct LOGWRAPPER{
  * @param fmt The format string (printf-compatible) that specifies how
  *        subsequent arguments are converted to output.
  */
-
+void av_log(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
 
 void av_logx(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
 void av_ll(void *avcl, int level, const char* file_name, const char* function_name, int line_num, const char *fmt, ...);
@@ -270,12 +270,23 @@ enum AV_LOG_INFO_TYPE{
     AV_INFO_ERROR_CODE_PAIR,
 };
 #define __FILENAME__ (strrchr(__FILE__,'/')?strrchr(__FILE__,'/')+1:__FILE__)
-#define av_log(avcl, level, ...) av_ll(avcl, level, __FILENAME__, __FUNCTION__, __LINE__, __VA_ARGS__)
 
 #define av_trace(avcl,code,...) av_log_fatal(avcl,AV_LOG_TRACE, code, __FILENAME__, __FUNCTION__, __LINE__,__VA_ARGS__)
 #define av_fatal(avcl,code,...) av_log_fatal(avcl,AV_LOG_FATAL, code, __FILENAME__, __FUNCTION__, __LINE__,__VA_ARGS__)
 
 void av_log_fatal(void *avcl, int level, int code, const char* filename, const char* function, int line, const char *fmt, ...);
+
+/**
+ * Send the warning message to the log.
+ */
+#define av_warn2(avcl,code,fmt,...) av_logc(avcl,AV_LOG_ERROR + 1, code, "<%s,%s,%d>" fmt "\n", __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
+/**
+ * Send the error message to the log.
+ */
+#define av_error(avcl,code,fmt,...) av_logc(avcl,AV_LOG_ERROR - 1, code, "<%s,%s,%d>" fmt "\n", __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
+void av_logc(void *avcl, int level, int code, const char *fmt, ...);
 
 void av_fatal_set_callback(void(*callback)(void*, int, int, const char*));
 
@@ -327,6 +338,14 @@ void av_log_set_level(int level);
  * @param callback A logging function with a compatible signature.
  */
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list));
+
+void av_log_set_tls_level(int level);
+
+/**
+ * Set thread local source callback
+ * @param callback
+ */
+void av_log_set_tls_callback(void (*callback)(void*, int, int, const char*, va_list));
 
 /**
  * Default logging callback

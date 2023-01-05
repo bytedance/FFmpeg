@@ -25,6 +25,7 @@
 #include "network.h"
 #include "tls.h"
 #include "url.h"
+#include "ttexport.h"
 #include "libavcodec/internal.h"
 #include "libavutil/avutil.h"
 #include "libavutil/mem.h"
@@ -81,9 +82,9 @@ void ff_resourceloader_init(resource_loader_open open, resource_loader_read read
     gResourceLoader.close = close;
 }
 
-void ff_getaddrinfo_a_init(getaddrinfo_a_start getinfo, getaddrinfo_a_result result,getaddrinfo_a_free end,
-                           save_host_addr save_ip,  network_log_callback log_callback, tcp_io_read_callback io_callback,
-                           network_info_callback info_callback) {
+void ff_getaddrinfo_a_init(tt_dns_start getinfo, tt_dns_result result,tt_dns_free end,
+                           tt_save_ip save_ip,  tt_log_callback log_callback, tt_read_callback io_callback,
+                           tt_info_callback info_callback) {
     gGetAddrinfo_a.start = getinfo;
     gGetAddrinfo_a.result = result;
     gGetAddrinfo_a.free = end;
@@ -93,7 +94,28 @@ void ff_getaddrinfo_a_init(getaddrinfo_a_start getinfo, getaddrinfo_a_result res
     gGetAddrinfo_a.info_callback = info_callback;
 }
 
-void ff_register_dns_parser(getaddrinfo_a_start getinfo, getaddrinfo_a_result result, getaddrinfo_a_free end) {
+void tt_register_io_callback(tt_save_ip       save_ip, 
+                             tt_log_callback  log_callback, 
+                             tt_read_callback read_callback, 
+                             tt_info_callback info_callback)
+{
+    gGetAddrinfo_a.save_ip = save_ip;
+    gGetAddrinfo_a.log_callback = log_callback;
+    gGetAddrinfo_a.io_callback = read_callback;
+    gGetAddrinfo_a.info_callback = info_callback;
+}
+                            
+void ff_register_dns_parser(tt_dns_start getinfo, tt_dns_result result, tt_dns_free end) {
+    if (ff_support_getaddrinfo_a()) {
+        return;
+    }
+    gGetAddrinfo_a.start = getinfo;
+    gGetAddrinfo_a.result = result;
+    gGetAddrinfo_a.free = end;
+}
+
+void tt_register_dnsparser(tt_dns_start getinfo, tt_dns_result result, tt_dns_free end)
+{
     if (ff_support_getaddrinfo_a()) {
         return;
     }

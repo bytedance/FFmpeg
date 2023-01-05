@@ -59,6 +59,12 @@
  */
 #define FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM  (1 << 3)
 
+/*
+ * The codec supports frame threading and has inter-frame dependencies, so it
+ * uses ff_thread_report/await_progress().
+ */
+#define FF_CODEC_CAP_ALLOCATE_PROGRESS      (1 << 6)
+
 #ifdef TRACE
 #   define ff_tlog(ctx, ...) av_log(ctx, AV_LOG_TRACE, __VA_ARGS__)
 #else

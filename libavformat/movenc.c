@@ -53,6 +53,7 @@
 #include "libavutil/timecode.h"
 #include "libavutil/color_utils.h"
 #include "hevc.h"
+#include "bytevc2.h"
 #include "rtpenc.h"
 #include "mov_chan.h"
 #include "vpcc.h"
@@ -1144,6 +1145,19 @@ static int mov_write_hvcc_tag(AVIOContext *pb, MOVTrack *track)
     return update_size(pb, pos);
 }
 
+static int mov_write_bvc2c_tag(AVIOContext *pb, MOVTrack *track)
+{
+    int64_t pos = avio_tell(pb);
+
+    avio_wb32(pb, 0);
+    ffio_wfourcc(pb, "bv2C");
+    if (track->tag == MKTAG('b','v','c','2'))
+        ff_isom_write_bvc2c(pb, track->vos_data, track->vos_len, 1);
+    else
+        ff_isom_write_bvc2c(pb, track->vos_data, track->vos_len, 0);
+    return update_size(pb, pos);
+}
+
 /* also used by all avid codecs (dv, imx, meridien) and their variants */
 static int mov_write_avid_tag(AVIOContext *pb, MOVTrack *track)
 {
@@ -1969,9 +1983,11 @@ static int mov_write_video_tag(AVIOContext *pb, MOVMuxContext *mov, MOVTrack *tr
     } else if (track->par->codec_id == AV_CODEC_ID_DNXHD) {
         mov_write_avid_tag(pb, track);
         avid = 1;
-    } else if (track->par->codec_id == AV_CODEC_ID_HEVC)
+    } else if (track->par->codec_id == AV_CODEC_ID_HEVC) {
         mov_write_hvcc_tag(pb, track);
-    else if (track->par->codec_id == AV_CODEC_ID_H264 && !TAG_IS_AVCI(track->tag)) {
+    } else if (track->par->codec_id == AV_CODEC_ID_BYTE_VC2) {
+        mov_write_bvc2c_tag(pb, track);
+    } else if (track->par->codec_id == AV_CODEC_ID_H264 && !TAG_IS_AVCI(track->tag)) {
         mov_write_avcc_tag(pb, track);
         if (track->mode == MODE_IPOD)
             mov_write_uuid_tag_ipod(pb);
@@ -5178,7 +5194,16 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
             goto end;
         avio_write(pb, pkt->data, size);
 #endif
-    } else {
+    } else if (par->codec_id == AV_CODEC_ID_BYTE_VC2 && trk->vos_len > 6 &&
+               (AV_RB24(trk->vos_data) == 1 || AV_RB32(trk->vos_data) == 1)) {
+        /* extradata is Annex B, assume the bitstream is too and convert it */
+        if (trk->hint_track >= 0 && trk->hint_track < mov->nb_streams) {
+            ff_bytevc2_annexb2mp4_buf(pkt->data, &reformatted_data, &size, 0, NULL);
+            avio_write(pb, reformatted_data, size);
+        } else {
+            size = ff_bytevc2_annexb2mp4(pb, pkt->data, pkt->size, 0, NULL);
+        }
+     } else {
         if (mov->encryption_scheme == MOV_ENC_CENC_AES_CTR) {
             if (par->codec_id == AV_CODEC_ID_H264 && par->extradata_size > 4) {
                 int nal_size_length = (par->extradata[4] & 0x3) + 1;
@@ -6537,6 +6562,7 @@ const AVCodecTag codec_mp4_tags[] = {
     { AV_CODEC_ID_H264        , MKTAG('a', 'v', 'c', '1') },
     { AV_CODEC_ID_HEVC        , MKTAG('h', 'e', 'v', '1') },
     { AV_CODEC_ID_HEVC        , MKTAG('h', 'v', 'c', '1') },
+    { AV_CODEC_ID_BYTE_VC2    , MKTAG('b', 'v', 'c', '2') },
     { AV_CODEC_ID_MPEG2VIDEO  , MKTAG('m', 'p', '4', 'v') },
     { AV_CODEC_ID_MPEG1VIDEO  , MKTAG('m', 'p', '4', 'v') },
     { AV_CODEC_ID_MJPEG       , MKTAG('m', 'p', '4', 'v') },

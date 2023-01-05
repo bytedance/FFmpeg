@@ -181,6 +181,13 @@ int av_reallocp(void *ptr, size_t size)
     return 0;
 }
 
+void *av_malloc_array(size_t nmemb, size_t size)
+{
+    if (!size || nmemb >= INT_MAX / size)
+        return NULL;
+    return av_malloc(nmemb * size);
+}
+
 void *av_realloc_array(void *ptr, size_t nmemb, size_t size)
 {
     if (!size || nmemb >= INT_MAX / size)

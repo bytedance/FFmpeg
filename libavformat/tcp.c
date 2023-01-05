@@ -69,7 +69,6 @@ typedef struct TCPContext {
     int user_flag;
     aptr_t aptr;
     aptr_t gsc;
-    aptr_t cbptr;
     char ip_addr[132];
     char hostname[1024];
     int port;
@@ -90,7 +89,6 @@ static const AVOption options[] = {
     { "recv_buffer_size", "Socket receive buffer size (in bytes)",             OFFSET(recv_buffer_size), AV_OPT_TYPE_INT, { .i64 = -1 },         -1, INT_MAX, .flags = D|E },
     { "aptr", "set app ptr for ffmpeg", OFFSET(aptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "gsc", "get socket pool", OFFSET(gsc),  AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
-    { "cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_APTR, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D|E },
     { "is_first_packet", "Mark data is first packet or not", OFFSET(is_first_packet), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
     { "fastopen", "enable fastopen",          OFFSET(fastopen), AV_OPT_TYPE_INT, { .i64 = 0},       0, INT_MAX, .flags = D|E },
@@ -203,7 +201,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     struct addrinfo hints = { 0 }, *ai = NULL, *cur_ai = NULL;
     int port, fd = -1;
     TCPContext *s = h->priv_data;
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsTransOpenStart, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsTransOpenStart, s->user_flag);
     const char *p;
     char buf[256];
     int ret;
@@ -279,8 +277,8 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
         goto lable_get;
     }
 #endif
-    if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_getaddrinfo_a(s->cbptr) == 0 || s->aptr == 0) {
-        if(ff_isupport_getaddrinfo_a(s->cbptr) == 0 && h->interrupt_callback.callback != NULL && hostname[0] != 0) {
+    if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_getaddrinfo_a(0) == 0 || s->aptr == 0) {
+        if(ff_isupport_getaddrinfo_a(0) == 0 && h->interrupt_callback.callback != NULL && hostname[0] != 0) {
             ret = tcp_getaddrinfo_a(h,hostname,portstr,&hints,&ai);
         } else {
             if (!hostname[0])
@@ -311,15 +309,15 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
         if(timeout == -1) {
             timeout = 10*1000000;
         }
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsDNSStart, s->user_flag);
-        ctx = ff_igetaddrinfo_a_start(s->cbptr, s->aptr,hostname,s->user_flag);
+        ff_inetwork_log_callback(0, s->aptr, IsDNSStart, s->user_flag);
+        ctx = ff_igetaddrinfo_a_start(0, s->aptr,hostname,s->user_flag);
         if(ctx == NULL) {
             av_fatal(h, AVERROR_GET_ADDR_INFO_START_FAILED, "neterrno:%d Failed to resolve hostname.ctx is null.", ff_neterrno());
             return AVERROR(EIO);
         }
 	    ret = 0;
         while(!h->interrupt_callback.callback(h->interrupt_callback.opaque)) {
-            ret = ff_igetaddrinfo_a_result(s->cbptr, ctx,hostname,1024);
+            ret = ff_igetaddrinfo_a_result(0, ctx,hostname,1024);
             if(ret != 0) {
                 break;
             }
@@ -331,7 +329,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
             }
         }
         if(ctx != NULL) {
-            ff_igetaddrinfo_a_free(s->cbptr, ctx);
+            ff_igetaddrinfo_a_free(0, ctx);
             ctx  = NULL;
         }
         if(ret > 0) {
@@ -343,7 +341,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
             if(strlen(hostname) <= sizeof(s->ip_addr)) {
                 memcpy(s->ip_addr, hostname, strlen(hostname));
             }
-            ff_isave_host_addr(s->cbptr, s->aptr, s->ip_addr, s->user_flag);
+            ff_isave_host_addr(0, s->aptr, s->ip_addr, s->user_flag);
             goto resovle_success;
 
         } else if(ret == -1) {
@@ -381,7 +379,7 @@ resovle_success:
         av_fatal(h, AVERROR_FF_SOCKET_FAILED, "neterrno:%d ff_socket failed", ret);
         goto fail;
     }
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketCreateSuccess, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsSocketCreateSuccess, s->user_flag);
 
     /* Set the socket's send or receive buffer sizes, if specified.
        If unspecified or setting fails, system default is used. */
@@ -429,12 +427,12 @@ label_success:
     if (ai != NULL) {
         freeaddrinfo(ai);
     }
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketConnected, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsSocketConnected, s->user_flag);
     return 0;
 
 fail:
     if (ret < 0) {
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketOpenErr, ret);
+        ff_inetwork_log_callback(0, s->aptr, IsSocketOpenErr, ret);
     }
     if (cur_ai != NULL && cur_ai->ai_next) {
         /* Retry with the next sockaddr */
@@ -516,8 +514,8 @@ static int tcp_fast_open(URLContext *h, const char *http_request, const char *ur
     }
 #endif
 
-if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_getaddrinfo_a(s->cbptr) == 0 || s->aptr == 0) {
-        if(ff_isupport_getaddrinfo_a(s->cbptr) == 0 && h->interrupt_callback.callback != NULL && hostname[0] != 0) {
+if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_getaddrinfo_a(0) == 0 || s->aptr == 0) {
+        if(ff_isupport_getaddrinfo_a(0) == 0 && h->interrupt_callback.callback != NULL && hostname[0] != 0) {
             ret = tcp_getaddrinfo_a(h,hostname,portstr,&hints,&ai);
         } else {
             if (!hostname[0])
@@ -548,15 +546,15 @@ if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_get
         if(timeout == -1) {
             timeout = 10*1000000;
         }
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsDNSStart, s->user_flag);
-        ctx = ff_igetaddrinfo_a_start(s->cbptr, s->aptr,hostname,s->user_flag);
+        ff_inetwork_log_callback(0, s->aptr, IsDNSStart, s->user_flag);
+        ctx = ff_igetaddrinfo_a_start(0, s->aptr,hostname,s->user_flag);
         if(ctx == NULL) {
             av_fatal(h, AVERROR_GET_ADDR_INFO_START_FAILED, "neterrno:%d Failed to resolve hostname.ctx is null.", ff_neterrno());
             return AVERROR(EIO);
         }
 	    ret = 0;
         while(!h->interrupt_callback.callback(h->interrupt_callback.opaque)) {
-            ret = ff_igetaddrinfo_a_result(s->cbptr, ctx,hostname,1024);
+            ret = ff_igetaddrinfo_a_result(0, ctx,hostname,1024);
             if(ret != 0) {
                 break;
             }
@@ -568,7 +566,7 @@ if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_get
             }
         }
         if(ctx != NULL) {
-            ff_igetaddrinfo_a_free(s->cbptr, ctx);
+            ff_igetaddrinfo_a_free(0, ctx);
             ctx  = NULL;
         }
         if(ret > 0) {
@@ -580,7 +578,7 @@ if(h->interrupt_callback.callback == NULL || hostname[0] == 0 || ff_isupport_get
             if(strlen(hostname) <= sizeof(s->ip_addr)) {
                 memcpy(s->ip_addr, hostname, strlen(hostname));
             }
-            ff_isave_host_addr(s->cbptr, s->aptr, s->ip_addr, s->user_flag);
+            ff_isave_host_addr(0, s->aptr, s->ip_addr, s->user_flag);
             goto resovle_success;
 
         } else if(ret == -1) {
@@ -653,7 +651,7 @@ resovle_success:
             } else {
                 av_log(h, AV_LOG_DEBUG, "tfo sendto success");
                 s->fastopen_success = 1;
-                ff_inetwork_log_callback(s->cbptr, s->aptr, IsTcpFastOpenSuccess, s->user_flag);
+                ff_inetwork_log_callback(0, s->aptr, IsTcpFastOpenSuccess, s->user_flag);
             }
         } 
     }
@@ -662,12 +660,12 @@ resovle_success:
     s->fd = fd;
 
     freeaddrinfo(ai);
-    ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketConnected, s->user_flag);
+    ff_inetwork_log_callback(0, s->aptr, IsSocketConnected, s->user_flag);
     return 0;
 
  fail:
      if (ret < 0) {
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketOpenErr, ret);
+        ff_inetwork_log_callback(0, s->aptr, IsSocketOpenErr, ret);
     }
     if (cur_ai->ai_next) {
         /* Retry with the next sockaddr */
@@ -713,7 +711,7 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
         if (ret) {
             if(ret != AVERROR_EXIT) {
                 //you cann't call ff_neterrno here, because errno will be set by other operations.
-                ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketReadErr, ret);
+                ff_inetwork_log_callback(0, s->aptr, IsSocketReadErr, ret);
                 av_fatal(h, AVERROR_READ_NETWORK_WAIT_TIMEOUT, "ret:%d neterrno:%d network wait timeout", ret, ff_neterrno());
             }
             return ret;
@@ -722,15 +720,15 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
     ret = recv(s->fd, buf, size, 0);
     if (ret < 0) {
         int error = ff_neterrno();
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketReadErr, error);
+        ff_inetwork_log_callback(0, s->aptr, IsSocketReadErr, error);
         av_fatal(h, AVERROR_RECEIV_DATA_FAILED, "ret:%d neterrno:%d socket revc data failed", ret, error);
         return error;
     }
 
     if (ret > 0) {
-        ff_inetwork_io_read_callback(s->cbptr, s->aptr, IsNetworkIORead, ret);
+        ff_inetwork_io_read_callback(0, s->aptr, IsNetworkIORead, ret);
         if (!s->is_first_packet) {
-            ff_inetwork_log_callback(s->cbptr, s->aptr, IsPacketRecved, s->user_flag);
+            ff_inetwork_log_callback(0, s->aptr, IsPacketRecved, s->user_flag);
             s->is_first_packet = 1;
         }
     }
@@ -744,7 +742,7 @@ static int tcp_write(URLContext *h, const uint8_t *buf, int size)
     if (s->fd > 0 && !(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd_timeout(s->fd, 1, h->rw_timeout, &h->interrupt_callback);
         if (ret) {
-            ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketWriteErr, ret);
+            ff_inetwork_log_callback(0, s->aptr, IsSocketWriteErr, ret);
             av_fatal(h, AVERROR_WRITE_NETWORK_WAIT_TIMEOUT, "ret:%d neterrno:%d network wait timeout", ret, ff_neterrno());
             return ret;
         }
@@ -773,7 +771,7 @@ static int tcp_write(URLContext *h, const uint8_t *buf, int size)
     ret = send(s->fd, buf, size, MSG_NOSIGNAL);
     if (ret < 0) {
         int error = ff_neterrno();
-        ff_inetwork_log_callback(s->cbptr, s->aptr, IsSocketWriteErr, ret);
+        ff_inetwork_log_callback(0, s->aptr, IsSocketWriteErr, ret);
         av_fatal(h, AVERROR_SEND_DATA_FAILED, "ret:%d neterrno:%d socket send failed", ret, error);
 		return error;
     }

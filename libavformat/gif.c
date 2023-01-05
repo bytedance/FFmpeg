@@ -27,6 +27,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
+#include "libavcodec/gif.h"
 
 /* XXX: random value that shouldn't be taken into effect if there is no
  * transparent color in the palette (the transparency bit will be set to 0) */
@@ -51,11 +52,13 @@ static int get_palette_transparency_index(const uint32_t *palette)
 }
 
 static int gif_image_write_header(AVIOContext *pb, AVStream *st,
-                                  int loop_count, uint32_t *palette)
+                                  int loop_count, uint32_t *palette, AVDictionary *metadata)
 {
-    int i;
+    int i ,len = 0;
     int64_t aspect = 0;
     const AVRational sar = st->sample_aspect_ratio;
+    AVDictionaryEntry *e = NULL;
+    unsigned char* ptr = NULL;
 
     if (sar.num > 0 && sar.den > 0) {
         aspect = sar.num * 64LL / sar.den - 15;
@@ -97,6 +100,24 @@ static int gif_image_write_header(AVIOContext *pb, AVStream *st,
         avio_w8(pb, 0x00); /* Data Sub-block Terminator */
     }
 
+    e = av_dict_get(metadata, "comment", NULL, 0);
+    if(e && e->value){
+        ptr = e->value;
+        len = strlen(ptr);
+    }
+    if(len > 0){
+        avio_w8(pb, GIF_EXTENSION_INTRODUCER);
+        avio_w8(pb, GIF_COM_EXT_LABEL);
+        while(len > 0){
+            int size = FFMIN(255, len);
+            avio_w8(pb, (uint8_t)size);
+            avio_write(pb, ptr, size);
+            ptr += size;
+            len -= size;
+        }
+        avio_w8(pb, 0x00); /* Data Sub-block Terminator */
+    }
+
     avio_flush(pb);
     return 0;
 }
@@ -131,7 +152,7 @@ static int gif_write_header(AVFormatContext *s)
         /* delay header writing: we wait for the first palette to put it
          * globally */
     } else {
-        gif_image_write_header(s->pb, s->streams[0], gif->loop, palette);
+        gif_image_write_header(s->pb, s->streams[0], gif->loop, palette, s->metadata);
     }
 
     return 0;
@@ -217,7 +238,7 @@ static int gif_write_packet(AVFormatContext *s, AVPacket *pkt)
                 av_log(s, AV_LOG_ERROR, "Invalid palette extradata\n");
                 return AVERROR_INVALIDDATA;
             }
-            gif_image_write_header(s->pb, video_st, gif->loop, palette);
+            gif_image_write_header(s->pb, video_st, gif->loop, palette, s->metadata);
         }
 
         return av_copy_packet(gif->prev_pkt, pkt);

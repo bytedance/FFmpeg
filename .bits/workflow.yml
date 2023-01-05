@@ -1,0 +1,17 @@
+type: pipeline
+
+jobs:
+
+  linux_fate:
+    type: service
+    service_name: template
+    display_name: linux fate
+    settings:
+      template_config_id: 24835
+
+  macOS_fate:
+    type: service
+    service_name: template
+    display_name: macOS fate
+    settings:
+      template_config_id: 24839

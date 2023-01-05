@@ -508,6 +508,7 @@ void avio_write_marker(AVIOContext *s, int64_t time, enum AVIODataMarkerType typ
 #define AVSEEK_CACHEEND 0x5000
 #define AVSEEK_FILESET 0x6000
 #define AVSEEK_RESET_AUTO_RANGE 0x7000
+#define AVSEEK_DOWNLOAD_OFFSET 0x7001
 
 /**
  * Passing this flag as the "whence" parameter to a seek function causes it to
@@ -560,6 +561,11 @@ int avio_feof_nonecheck(AVIOContext *s);
 * @return 0 for success
 */
 int avio_close_autorange(AVIOContext *s);
+/**
+ * get download offset
+ * @return < 0 for error, >= 0 for download offset
+ */
+int64_t avio_get_download_offset(AVIOContext *s);
 #if FF_API_URL_FEOF
 /**
  * @deprecated use avio_feof()
@@ -588,6 +594,16 @@ void avio_flush(AVIOContext *s);
  * @return number of bytes read or AVERROR
  */
 int avio_read(AVIOContext *s, unsigned char *buf, int size);
+
+
+/**
+ * Read size bytes from AVIOContext into buf. Unlike avio_read(), this is allowed
+ * to read fewer bytes than requested. The missing bytes can be read in the next
+ * call. This always tries to read at least 1 byte.
+ * Useful to reduce latency in certain cases.
+ * @return number of bytes read or AVERROR
+ */
+int avio_read_partial(AVIOContext *s, unsigned char *buf, int size);
 
 /**
  * @name Functions for reading from AVIOContext

@@ -645,7 +645,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             !strcmp(s->iformat->name, "tta")) {
             if ((ret = ff_id3v2_parse_apic(s, &id3v2_extra_meta)) < 0){
                 av_trace(s,ret,"ret:%d", ret);
-                goto fail;
+                goto close;
             }
         } else
             av_log(s, AV_LOG_DEBUG, "demuxer does not support additional id3 data, skipping\n");
@@ -654,7 +654,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     if ((ret = avformat_queue_attached_pictures(s)) < 0){
         av_trace(s,ret,"ret:%d", ret);
-        goto fail;
+        goto close;
     }
 
     if (!(s->flags&AVFMT_FLAG_PRIV_OPT) && s->pb && !s->internal->data_offset)
@@ -674,6 +674,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
     *ps = s;
     return 0;
 
+close:
+    if (s->iformat->read_close)
+        s->iformat->read_close(s);
 fail:
     ff_id3v2_free_extra_meta(&id3v2_extra_meta);
     av_dict_free(&tmp);
@@ -4473,7 +4476,6 @@ void avformat_free_context(AVFormatContext *s)
     av_freep(&s->internal);
     av_freep(&s->url);
     flush_packet_queue(s);
-
     av_free(s);
 }
 
@@ -5813,9 +5815,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 }
 void avformat_getaddrinfo_a_init(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free,
-                                 void* getaddrrinfo_save_ip, void* network_log_callback, void* tcp_io_callback, void* network_info_callback) {
+                                 void* getaddrrinfo_save_ip, void* tt_log_callback, void* tcp_io_callback, void* tt_info_callback) {
     ff_getaddrinfo_a_init(getaddrrinfo_start, getaddrrinfo_result,getaddrrinfo_free,
-                          getaddrrinfo_save_ip, network_log_callback, tcp_io_callback, network_info_callback);
+                          getaddrrinfo_save_ip, tt_log_callback, tcp_io_callback, tt_info_callback);
 }
 
 void avformat_register_dns_parser(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free) {

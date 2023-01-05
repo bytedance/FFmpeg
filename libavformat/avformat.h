@@ -529,6 +529,10 @@ typedef enum {
     IsTransOpenStart,
     IsSocketCreateSuccess,
     Is3xxHappen,
+    IsCertVerifyDetail,
+    IsRedirectURL,
+    IsCDNCacheStatus,
+    IsCDNTimingInfo,
 
     IsTcpFastOpenSuccess= 250,
     IsSocketOpenErr,
@@ -557,7 +561,9 @@ typedef enum {
     IsGetResponseHeaders = 31,
     IsMDLInfoCallBack = 32,
     IsHTTPReqCallback = 33,
-    IsSidxInfoCallback = 34
+    IsSidxInfoCallback = 34,
+    IsFlvVideoTagInfo = 35,
+    IsFlvAudioTagInfo = 36
 }NetWorkInfo;
 
 typedef struct PlayerBufferInfo {
@@ -2041,16 +2047,19 @@ typedef struct AVFormatContext {
      */
     int max_streams;
 
-    /**
-     * start position of moov box
-     * Demuxing: set by avformat
-     */
+    attribute_deprecated
+    void *reverse;
+
+    attribute_deprecated
+    int reverse1;
+
+    attribute_deprecated
+    int reverse2;
+
+    attribute_deprecated
     int64_t moov_pos;
 
-    /**
-     * start position of mdat box
-     * Demuxing: set by avformat
-     */
+    attribute_deprecated
     int64_t mdat_pos;
 } AVFormatContext;
 
@@ -2145,7 +2154,7 @@ void av_register_output_format(AVOutputFormat *format);
 int avformat_network_init(void);
 
 void avformat_getaddrinfo_a_init(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free,
-                                 void* getaddrrinfo_save_ip, void* network_log_callback, void* tcp_io_callback, void* network_info_callback);
+                                 void* getaddrrinfo_save_ip, void* tt_log_callback, void* tcp_io_callback, void* tt_info_callback);
 
 void avformat_register_dns_parser(void* getaddrrinfo_start, void* getaddrrinfo_result,void* getaddrrinfo_free);
 

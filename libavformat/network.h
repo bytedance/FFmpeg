@@ -239,23 +239,23 @@ const char *ff_gai_strerror(int ecode);
 #endif
 
 typedef struct getaddrinfo_a_CTX{
-    getaddrinfo_a_start     start;
-    getaddrinfo_a_result    result;
-    getaddrinfo_a_free      free;
-    save_host_addr          save_ip;
-    network_log_callback    log_callback;
-    tcp_io_read_callback    io_callback;
-    network_info_callback   info_callback;
+    tt_dns_start     start;
+    tt_dns_result    result;
+    tt_dns_free      free;
+    tt_save_ip          save_ip;
+    tt_log_callback    log_callback;
+    tt_read_callback    io_callback;
+    tt_info_callback   info_callback;
 }getaddrinfo_a_ctx;
 
 int ff_support_getaddrinfo_a(void);
 
 int ff_isupport_getaddrinfo_a(uint64_t cb_ctx);
 
-void ff_getaddrinfo_a_init(getaddrinfo_a_start getinfo, getaddrinfo_a_result result,getaddrinfo_a_free end,
-                           save_host_addr save_ip, network_log_callback log_callback, tcp_io_read_callback io_callback, network_info_callback info_callback);
+void ff_getaddrinfo_a_init(tt_dns_start getinfo, tt_dns_result result,tt_dns_free end,
+                           tt_save_ip save_ip, tt_log_callback log_callback, tt_read_callback io_callback, tt_info_callback info_callback);
 
-void ff_register_dns_parser(getaddrinfo_a_start getinfo, getaddrinfo_a_result result, getaddrinfo_a_free end);
+void ff_register_dns_parser(tt_dns_start getinfo, tt_dns_result result, tt_dns_free end);
 
 void* ff_igetaddrinfo_a_start(uint64_t cb_ctx, uint64_t handle,const char* hostname, int user_flag);
 
@@ -299,13 +299,6 @@ int ff_resource_loader_read(void* loader, unsigned char *buf, int size, void *cb
 int64_t ff_resource_loader_seek(void* loader, int64_t pos, int whence);
 
 int ff_resource_loader_close(void* loader);
-
-typedef struct httpEvent_ctx {
-  char      url[4096];
-  uint64_t  off;
-  uint64_t  end_off;
-} httpEvent_ctx;
-
 
 #define POLLING_TIME 100 /// Time in milliseconds between interrupt check
 

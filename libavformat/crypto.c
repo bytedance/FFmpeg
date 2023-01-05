@@ -71,7 +71,6 @@ typedef struct CryptoContext {
     uint8_t pad[BLOCKSIZE];
     int pad_len;
     
-    void *cbptr;
     int drm_downgrade;
     int enable_intertrust_drm;
     void *drm_aptr;
@@ -90,7 +89,6 @@ static const AVOption options[] = {
     {"decryption_iv",  "AES decryption initialization vector", OFFSET(decrypt_iv),  AV_OPT_TYPE_BINARY, .flags = D },
     {"encryption_key", "AES encryption key",                   OFFSET(encrypt_key), AV_OPT_TYPE_BINARY, .flags = E },
     {"encryption_iv",  "AES encryption initialization vector", OFFSET(encrypt_iv),  AV_OPT_TYPE_BINARY, .flags = E },
-    {"cbptr", "app network callback ctx ptr", OFFSET(cbptr), AV_OPT_TYPE_INT64, { .i64 = 0 }, APTR_MIN, APTR_MAX, .flags = D },
     { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
     {"enable_intertrust_drm", "enable intertrust drm", OFFSET(enable_intertrust_drm), AV_OPT_TYPE_BOOL,  { .i64 = 0 }, 0, 1, D },
     {"drm_aptr", "drm aptr", OFFSET(drm_aptr), AV_OPT_TYPE_INT64, { .i64 = 0 }, INT64_MIN, INT64_MAX, D },
@@ -258,7 +256,7 @@ retry:
             flag |= DRM_FILE_END;
 
         counts |= (flag << 16);
-        res = av_idrm_decrypt(c->cbptr, c->drm_ctx, c->inbuffer + c->indata_used,
+        res = av_drm_decrypt(c->drm_ctx, c->inbuffer + c->indata_used,
                 counts, c->decrypt_iv, c->outbuffer);
         if (res != 0 && (c->drm_downgrade == 0 || (c->drm_downgrade != 0 && !(flag & DRM_FILE_HEADER)))) 
             return AVERROR_DRM_DECRYPT_FAILED;
