@@ -49,6 +49,7 @@ typedef struct URLContext {
     const char *protocol_whitelist;
     const char *protocol_blacklist;
     int min_packet_size;        /**< if non zero, the stream is packetized with this min packet size */
+    uint64_t unused;
 } URLContext;
 
 typedef struct URLProtocol {

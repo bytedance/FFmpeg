@@ -431,6 +431,17 @@ int av_get_packet(AVIOContext *s, AVPacket *pkt, int size);
 int av_append_packet(AVIOContext *s, AVPacket *pkt, int size);
 
 /*************************************************/
+/* fractional numbers for exact pts handling */
+
+/**
+ * The exact value of the fractional number is: 'val + num / den'.
+ * num is assumed to be 0 <= num < den.
+ */
+typedef struct AVFrac {
+    int64_t val, num, den;
+} AVFrac;
+
+/*************************************************/
 /* input/output formats */
 
 struct AVCodecTag;
@@ -983,6 +994,12 @@ typedef struct AVStream {
     void *priv_data;
 
     /**
+     * @deprecated this field is unused
+     */
+    attribute_deprecated
+    struct AVFrac pts;
+
+    /**
      * This is the fundamental unit of time (in seconds) in terms
      * of which frame timestamps are represented.
      *
@@ -1144,7 +1161,7 @@ typedef struct AVStream {
 
 #if LIBAVFORMAT_VERSION_MAJOR < 59
     // kept for ABI compatibility only, do not access in any way
-    void *unused;
+    void *unused; // info
 #endif
 
     int pts_wrap_bits; /**< number of bits in pts (used for wrapping control) */
@@ -1176,6 +1193,7 @@ typedef struct AVStream {
     enum AVStreamParseType need_parsing;
     struct AVCodecParserContext *parser;
 
+    #define MAX_REORDER_DELAY 16
 #if LIBAVFORMAT_VERSION_MAJOR < 59
     // kept for ABI compatibility only, do not access in any way
     void        *unused7;
@@ -1200,6 +1218,107 @@ typedef struct AVStream {
     int unused9;
     int unused10;
 #endif
+
+    int64_t interleaver_chunk_size;
+    int64_t interleaver_chunk_duration;
+
+    /**
+     * If not 0, the number of samples that should be skipped from the start of
+     * the stream (the samples are removed from packets with pts==0, which also
+     * assumes negative timestamps do not happen).
+     * Intended for use with formats such as mp3 with ad-hoc gapless audio
+     * support.
+     */
+    int64_t start_skip_samples;
+
+    /**
+     * If not 0, the first audio sample that should be discarded from the stream.
+     * This is broken by design (needs global sample count), but can't be
+     * avoided for broken by design formats such as mp3 with ad-hoc gapless
+     * audio support.
+     */
+    int64_t first_discard_sample;
+
+    /**
+     * The sample after last sample that is intended to be discarded after
+     * first_discard_sample. Works on frame boundaries only. Used to prevent
+     * early EOF if the gapless info is broken (considered concatenated mp3s).
+     */
+    int64_t last_discard_sample;
+
+    /**
+     * Number of internally decoded frames, used internally in libavformat, do not access
+     * its lifetime differs from info which is why it is not in that structure.
+     */
+    int nb_decoded_frames;
+
+    /**
+     * Timestamp offset added to timestamps before muxing
+     * NOT PART OF PUBLIC API
+     */
+    int64_t mux_ts_offset;
+
+    /**
+     * Internal data to check for wrapping of the time stamp
+     */
+    int64_t pts_wrap_reference;
+
+    /**
+     * Options for behavior, when a wrap is detected.
+     *
+     * Defined by AV_PTS_WRAP_ values.
+     *
+     * If correction is enabled, there are two possibilities:
+     * If the first time stamp is near the wrap point, the wrap offset
+     * will be subtracted, which will create negative time stamps.
+     * Otherwise the offset will be added.
+     */
+    int pts_wrap_behavior;
+
+    /**
+     * Internal data to prevent doing update_initial_durations() twice
+     */
+    int update_initial_durations_done;
+
+    /**
+     * Internal data to generate dts from pts
+     */
+    int64_t pts_reorder_error[MAX_REORDER_DELAY+1];
+    uint8_t pts_reorder_error_count[MAX_REORDER_DELAY+1];
+
+    /**
+     * Internal data to analyze DTS and detect faulty mpeg streams
+     */
+    int64_t last_dts_for_order_check;
+    uint8_t dts_ordered;
+    uint8_t dts_misordered;
+
+    /**
+     * Internal data to inject global side data
+     */
+    int inject_global_side_data;
+
+    /*****************************************************************
+     * All fields above this line are not part of the public API.
+     * Fields below are part of the public API and ABI again.
+     *****************************************************************
+     */
+
+    /**
+     * String containing paris of key and values describing recommended encoder configuration.
+     * Paris are separated by ','.
+     * Keys are separated from values by '='.
+     */
+    char *recommended_encoder_configuration;
+
+    /**
+     * display aspect ratio (0 if unknown)
+     * - encoding: unused
+     * - decoding: Set by libavformat to calculate sample_aspect_ratio internally
+     */
+    AVRational display_aspect_ratio;
+
+    struct FFFrac *priv_pts;
 
     /**
      * An opaque field for libavformat internal usage.
@@ -1330,7 +1449,7 @@ typedef struct AVFormatContext {
      * Exports (de)muxer private options if they exist.
      */
     const AVClass *av_class;
-
+    uint64_t aptr_unused;
     /**
      * The input container format.
      *
@@ -1942,10 +2061,43 @@ typedef struct AVFormatContext {
      */
     int max_streams;
 
+   void *unused_check_info;
+    
+    /**
+     * Whether to exit directly when hijack occurs.
+     * Demuxing: Set by user
+     */
+    attribute_deprecated
+    int hijack_exit;
+
+    /**
+     * Hijack error code.
+     * Demuxing: set by avformat
+     */
+    attribute_deprecated
+    int hijack_code;
+
+    /**
+     * start position of moov box
+     * Demuxing: set by avformat
+     * deprecated: get moov_pos from dict metadata
+     */
+    attribute_deprecated
+    int64_t moov_pos;
+
+    /**
+     * start position of mdat box
+     * Demuxing: set by avformat
+     * deprecated: get mdat_pos from dict metadata
+     */
+    attribute_deprecated
+    int64_t mdat_pos;
+
     /**
      * Skip duration calcuation in estimate_timings_from_pts.
      * - encoding: unused
      * - decoding: set by user
+ 
      */
     int skip_estimate_duration_from_pts;
 
@@ -3080,7 +3232,6 @@ int avformat_match_stream_specifier(AVFormatContext *s, AVStream *st,
 
 int avformat_queue_attached_pictures(AVFormatContext *s);
 
-#if FF_API_OLD_BSF
 /**
  * Apply a list of bitstream filters to a packet.
  *
@@ -3092,6 +3243,7 @@ int avformat_queue_attached_pictures(AVFormatContext *s);
  * @return  >=0 on success;
  *          AVERROR code on failure
  */
+#if FF_API_OLD_BSF
 attribute_deprecated
 int av_apply_bitstream_filters(AVCodecContext *codec, AVPacket *pkt,
                                AVBitStreamFilterContext *bsfc);

@@ -237,6 +237,7 @@ typedef struct AVIOContext {
     int (*write_packet)(void *opaque, uint8_t *buf, int buf_size);
     int64_t (*seek)(void *opaque, int64_t offset, int whence);
     int64_t pos;            /**< position in the file of the current buffer */
+    int unused_flush;
     int eof_reached;        /**< true if was unable to read due to error or eof */
     int write_flag;         /**< true if open for writing */
     int max_packet_size;
@@ -308,7 +309,7 @@ typedef struct AVIOContext {
      * ',' separated list of allowed protocols.
      */
     const char *protocol_whitelist;
-
+    uint64_t unused_aptr;
     /**
      * ',' separated list of disallowed protocols.
      */
