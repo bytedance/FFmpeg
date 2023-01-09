@@ -503,6 +503,24 @@ struct AVFilterLink {
      * New public fields should be added right above.
      *****************************************************************
      */
+    /**
+     * Lists of formats and channel layouts supported by the input and output
+     * filters respectively. These lists are used for negotiating the format
+     * to actually be used, which will be loaded into the format and
+     * channel_layout members, above, when chosen.
+     *
+     */
+    AVFilterFormats *in_formats;
+    AVFilterFormats *out_formats;
+
+    /**
+     * Lists of channel layouts and sample rates used for automatic
+     * negotiation.
+     */
+    AVFilterFormats  *in_samplerates;
+    AVFilterFormats *out_samplerates;
+    struct AVFilterChannelLayouts  *in_channel_layouts;
+    struct AVFilterChannelLayouts *out_channel_layouts;
 
     /**
      * Lists of supported formats / etc. supported by the input filter.
@@ -513,6 +531,15 @@ struct AVFilterLink {
      * Lists of supported formats / etc. supported by the output filter.
      */
     AVFilterFormatsConfig outcfg;
+
+    /**
+     * Audio only, the destination filter sets this to a non-zero value to
+     * request that buffers with the given number of samples should be sent to
+     * it. AVFilterPad.needs_fifo must also be set on the corresponding input
+     * pad.
+     * Last buffer before EOF will be padded with silence.
+     */
+    int request_samples;
 
     /** stage of the initialization of the link properties (dimensions, etc) */
     enum {
@@ -587,6 +614,11 @@ struct AVFilterLink {
      */
     int channels;
 
+    /**
+     * Link processing flags.
+     */
+    unsigned flags;
+    
     /**
      * Number of past frames sent through the link.
      */
