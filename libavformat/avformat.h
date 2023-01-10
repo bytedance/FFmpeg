@@ -1126,17 +1126,6 @@ typedef struct AVStream {
      */
     AVRational r_frame_rate;
 
-#if FF_API_LAVF_FFSERVER
-    /**
-     * String containing pairs of key and values describing recommended encoder configuration.
-     * Pairs are separated by ','.
-     * Keys are separated from values by '='.
-     *
-     * @deprecated unused
-     */
-    attribute_deprecated
-    char *recommended_encoder_configuration;
-#endif
 
     /**
      * Codec parameters associated with this stream. Allocated and freed by

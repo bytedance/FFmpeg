@@ -540,9 +540,17 @@ typedef struct AVCodecContext {
      */
     const AVClass *av_class;
     int log_level_offset;
+    uint64_t aptr_unused;
 
     enum AVMediaType codec_type; /* see AVMEDIA_TYPE_xxx */
     const struct AVCodec  *codec;
+
+    /**
+     * @deprecated this field is not used for anything in libavcodec
+     */
+    attribute_deprecated
+    char             codec_name[32];
+
     enum AVCodecID     codec_id; /* see AV_CODEC_ID_xxx */
 
     /**
@@ -559,6 +567,12 @@ typedef struct AVCodecContext {
      * - decoding: Set by user, will be converted to uppercase by libavcodec during init.
      */
     unsigned int codec_tag;
+
+    /**
+     * @deprecated this field is unused
+     */
+    attribute_deprecated
+    unsigned int stream_codec_tag;
 
     void *priv_data;
 
@@ -746,6 +760,12 @@ typedef struct AVCodecContext {
     enum AVPixelFormat pix_fmt;
 
     /**
+     * This option does nothing
+     * @deprecated use codec private options instead
+     */
+    attribute_deprecated int me_method;
+
+    /**
      * If non NULL, 'draw_horiz_band' is called by the libavcodec
      * decoder to draw a horizontal band. It improves cache usage. Not
      * all codecs can do that. You must check the codec capabilities
@@ -803,6 +823,10 @@ typedef struct AVCodecContext {
      * - decoding: unused
      */
     float b_quant_factor;
+
+    /** @deprecated use codec private option instead */
+    attribute_deprecated int rc_strategy;
+#define FF_RC_STRATEGY_XVID 1
 
 #if FF_API_PRIVATE_OPT
     /** @deprecated use encoder private options instead */
@@ -998,6 +1022,24 @@ typedef struct AVCodecContext {
     int me_subpel_quality;
 
     /**
+     * DTG active format information (additional aspect ratio
+     * information only used in DVB MPEG-2 transport streams)
+     * 0 if not set.
+     *
+     * - encoding: unused
+     * - decoding: Set by decoder.
+     * @deprecated Deprecated in favor of AVSideData
+     */
+    attribute_deprecated int dtg_active_format;
+#define FF_DTG_AFD_SAME         8
+#define FF_DTG_AFD_4_3          9
+#define FF_DTG_AFD_16_9         10
+#define FF_DTG_AFD_14_9         11
+#define FF_DTG_AFD_4_3_SP_14_9  13
+#define FF_DTG_AFD_16_9_SP_14_9 14
+#define FF_DTG_AFD_SP_4_3       15
+
+    /**
      * maximum motion estimation search range in subpel units
      * If 0 then no limit.
      *
@@ -1005,6 +1047,17 @@ typedef struct AVCodecContext {
      * - decoding: unused
      */
     int me_range;
+
+    /**
+     * @deprecated use encoder private option instead
+     */
+    attribute_deprecated int intra_quant_bias;
+#define FF_DEFAULT_QUANT_BIAS 999999
+
+    /**
+     * @deprecated use encoder private option instead
+     */
+    attribute_deprecated int inter_quant_bias;
 
     /**
      * slice flags
@@ -1015,6 +1068,14 @@ typedef struct AVCodecContext {
 #define SLICE_FLAG_CODED_ORDER    0x0001 ///< draw_horiz_band() is called in coded order instead of display
 #define SLICE_FLAG_ALLOW_FIELD    0x0002 ///< allow draw_horiz_band() with field slices (MPEG-2 field pics)
 #define SLICE_FLAG_ALLOW_PLANE    0x0004 ///< allow draw_horiz_band() with 1 component at a time (SVQ1)
+
+    /**
+     * XVideo Motion Acceleration
+     * - encoding: forbidden
+     * - decoding: set by decoder
+     * @deprecated XvMC doesn't need it anymore.
+     */
+    attribute_deprecated int xvmc_acceleration;
 
     /**
      * macroblock decision mode
@@ -1055,6 +1116,18 @@ typedef struct AVCodecContext {
 #endif
 
     /**
+     * @deprecated this field is unused
+     */
+    attribute_deprecated
+    int me_threshold;
+
+    /**
+     * @deprecated this field is unused
+     */
+    attribute_deprecated
+    int mb_threshold;
+
+    /**
      * precision of the intra DC coefficient - 8
      * - encoding: Set by user.
      * - decoding: Set by libavcodec
@@ -1074,6 +1147,12 @@ typedef struct AVCodecContext {
      * - decoding: Set by user.
      */
     int skip_bottom;
+
+    /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    float border_masking;
 
     /**
      * minimum MB Lagrange multiplier
@@ -1128,6 +1207,13 @@ typedef struct AVCodecContext {
     attribute_deprecated
     int chromaoffset;
 #endif
+
+    /**
+     * Multiplied by qscale for each frame and added to scene_change_score.
+     * - encoding: Set by user.
+     * - decoding: unused
+     */
+    attribute_deprecated int scenechange_factor;
 
     /**
      * Note: Value depends upon the compare function used for fullpel ME.
@@ -1394,6 +1480,17 @@ typedef struct AVCodecContext {
     int max_qdiff;
 
     /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    float rc_qsquish;
+
+    attribute_deprecated
+    float rc_qmod_amp;
+    attribute_deprecated
+    int rc_qmod_freq;
+
+    /**
      * decoder bitstream buffer size
      * - encoding: Set by user.
      * - decoding: unused
@@ -1409,6 +1506,12 @@ typedef struct AVCodecContext {
     RcOverride *rc_override;
 
     /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    const char *rc_eq;
+
+    /**
      * maximum bitrate
      * - encoding: Set by user.
      * - decoding: Set by user, may be overwritten by libavcodec.
@@ -1421,6 +1524,15 @@ typedef struct AVCodecContext {
      * - decoding: unused
      */
     int64_t rc_min_rate;
+
+    /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    float rc_buffer_aggressivity;
+
+    attribute_deprecated
+    float rc_initial_cplx;
 
     /**
      * Ratecontrol attempt to use, at maximum, <value> of what can be used without an underflow.
@@ -1460,6 +1572,18 @@ typedef struct AVCodecContext {
     attribute_deprecated
     int context_model;
 #endif
+
+    /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    int lmin;
+
+    /**
+     * @deprecated use encoder private options instead
+     */
+    attribute_deprecated
+    int lmax;
 
 #if FF_API_PRIVATE_OPT
     /** @deprecated use encoder private options instead */
@@ -1636,6 +1760,16 @@ typedef struct AVCodecContext {
 #define FF_DEBUG_THREADS     0x00010000
 #define FF_DEBUG_GREEN_MD    0x00800000
 #define FF_DEBUG_NOMC        0x01000000
+
+    /**
+     * debug
+     * - encoding: Set by user.
+     * - decoding: Set by user.
+     */
+    int debug_mv;
+#define FF_DEBUG_VIS_MV_P_FOR  0x00000001 // visualize forward predicted MVs of P-frames
+#define FF_DEBUG_VIS_MV_B_FOR  0x00000002 // visualize forward predicted MVs of B-frames
+#define FF_DEBUG_VIS_MV_B_BACK 0x00000004 // visualize backward predicted MVs of B-frames
 
     /**
      * Error recognition; may misdetect some more or less valid parts as errors.
@@ -2021,6 +2155,13 @@ typedef struct AVCodecContext {
     uint8_t *subtitle_header;
     int subtitle_header_size;
 
+    /**
+     * @deprecated use the 'error_rate' private AVOption of the mpegvideo
+     * encoders
+     */
+    attribute_deprecated
+    int error_rate;
+
 #if FF_API_VBV_DELAY
     /**
      * VBV delay coded in the last frame (in periods of a 27 MHz clock).
@@ -2146,16 +2287,6 @@ typedef struct AVCodecContext {
      */
     int seek_preroll;
 
-#if FF_API_DEBUG_MV
-    /**
-     * @deprecated unused
-     */
-    attribute_deprecated
-    int debug_mv;
-#define FF_DEBUG_VIS_MV_P_FOR  0x00000001 //visualize forward predicted MVs of P frames
-#define FF_DEBUG_VIS_MV_B_FOR  0x00000002 //visualize forward predicted MVs of B frames
-#define FF_DEBUG_VIS_MV_B_BACK 0x00000004 //visualize backward predicted MVs of B frames
-#endif
 
     /**
      * custom intra quantization matrix
@@ -2482,6 +2613,7 @@ typedef struct AVHWAccel {
      * New public fields should be added right above.
      *****************************************************************
      */
+    struct AVHWAccel *next;
 
     /**
      * Allocate a custom buffer

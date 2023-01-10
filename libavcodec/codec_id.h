@@ -22,6 +22,7 @@
 #define AVCODEC_CODEC_ID_H
 
 #include "libavutil/avutil.h"
+#include "version.h"
 
 /**
  * @addtogroup lavc_core
@@ -454,6 +455,7 @@ enum AVCodecID {
     AV_CODEC_ID_MLP,
     AV_CODEC_ID_GSM_MS, /* as found in WAV */
     AV_CODEC_ID_ATRAC3,
+    AV_CODEC_ID_VOXWARE,
     AV_CODEC_ID_APE,
     AV_CODEC_ID_NELLYMOSER,
     AV_CODEC_ID_MUSEPACK8,

@@ -251,6 +251,12 @@ typedef struct AVCodec {
      * @{
      */
     /**
+     * If defined, called on thread contexts when they are created.
+     * If the codec allocates writable tables in init(), re-allocate them here.
+     * priv_data will be set to a copy of the original.
+     */
+    int (*init_thread_copy_unused)(struct AVCodecContext *);
+    /**
      * Copy necessary context variables from a previous thread context to the current one.
      * If not defined, the next thread will start automatically; otherwise, the codec
      * must call ff_thread_finish_setup().
@@ -288,6 +294,7 @@ typedef struct AVCodec {
      */
     int (*encode2)(struct AVCodecContext *avctx, struct AVPacket *avpkt,
                    const struct AVFrame *frame, int *got_packet_ptr);
+
     /**
      * Decode picture or subtitle data.
      *
@@ -303,6 +310,10 @@ typedef struct AVCodec {
     int (*decode)(struct AVCodecContext *avctx, void *outdata,
                   int *got_frame_ptr, struct AVPacket *avpkt);
     int (*close)(struct AVCodecContext *);
+
+    int (*send_frame_unused)(struct AVCodecContext *avctx, const struct AVFrame *frame);
+    int (*send_packet_unused)(struct AVCodecContext *avctx, const struct AVPacket *avpkt);
+
     /**
      * Encode API with decoupled frame/packet dataflow. This function is called
      * to get one output packet. It should call ff_encode_get_frame() to obtain
