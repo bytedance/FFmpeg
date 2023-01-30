@@ -716,6 +716,8 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
         is_http = 1;
     } else if (av_strstart(proto_name, "data", NULL)) {
         ;
+    } else if (av_strstart(proto_name, "memorydatasource", NULL) || av_strstart(proto_name, "mediadatasource", NULL)) {
+        ;
     } else
         return AVERROR_INVALIDDATA;
 
