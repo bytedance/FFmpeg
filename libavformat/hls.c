@@ -272,6 +272,7 @@ typedef struct HLSContext {
     intptr_t abr;  /// abr_impl
     CryptoContext crypto_ctx;
     int hls_sub_demuxer_probe_type;
+    int enable_master_optimize;
     int seg_max_retry;
     int enable_seg_error;
     int enable_hls_pts_recal_opt;
@@ -2591,6 +2592,11 @@ static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
         for (i = 0; i < c->n_playlists; i++) {
             struct playlist *pls = c->playlists[i];
             pls->m3u8_hold_counters = 0;
+            struct variant *now_var = c->variants[c->now_var_index];
+            struct playlist *var_pls = now_var->playlists[0];
+            if (c->enable_master_optimize == 1 && pls != var_pls) {
+                continue;
+            }
             if ((ret = parse_playlist(c, pls->url, pls, NULL)) < 0) {
                 av_log(s, AV_LOG_WARNING, "parse_playlist error %s [%s]\n", av_err2str(ret), pls->url);
                 pls->broken = 1;
@@ -2601,19 +2607,27 @@ static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
         }
     }
 
-    for (i = 0; i < c->n_variants; i++) {
-        if (c->variants[i]->playlists[0]->n_segments == 0) {
-            av_log(s, AV_LOG_WARNING, "Empty segment [%s]\n", c->variants[i]->playlists[0]->url);
-            c->variants[i]->playlists[0]->broken = 1;
+    if (c->enable_master_optimize == 1) {
+        if (c->variants[c->now_var_index]->playlists[0]->n_segments == 0) {
+            av_log(NULL, AV_LOG_WARNING, "Empty playlist\n");
+            ret = AVERROR_EOF;
+            goto fail;
+        }
+    } else {
+        for (i = 0; i < c->n_variants; i++) {
+            if (c->variants[i]->playlists[0]->n_segments == 0) {
+                av_log(s, AV_LOG_WARNING, "Empty segment [%s]\n", c->variants[i]->playlists[0]->url);
+                c->variants[i]->playlists[0]->broken = 1;
+            }
         }
     }
 
     /* If this isn't a live stream, calculate the total duration of the
      * stream. */
-    if (c->variants[0]->playlists[0]->finished) {
+    if (c->variants[c->now_var_index]->playlists[0]->finished) {
         int64_t duration = 0;
-        for (i = 0; i < c->variants[0]->playlists[0]->n_segments; i++)
-            duration += c->variants[0]->playlists[0]->segments[i]->duration;
+        for (i = 0; i < c->variants[c->now_var_index]->playlists[0]->n_segments; i++)
+            duration += c->variants[c->now_var_index]->playlists[0]->segments[i]->duration;
         s->duration = duration;
     }
 
@@ -2627,6 +2641,16 @@ static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
             add_renditions_to_variant(c, var, AVMEDIA_TYPE_VIDEO, var->video_group);
         if (var->subtitles_group[0])
             add_renditions_to_variant(c, var, AVMEDIA_TYPE_SUBTITLE, var->subtitles_group);
+    }
+
+    if (c->enable_master_optimize == 1) {
+        struct variant *now_var = c->variants[c->now_var_index];
+        int audio_id = c->cur_audio_infoid >=0 ? c->cur_audio_infoid:0;
+        if (now_var->n_playlists > audio_id + 1) {
+           struct playlist *pls = now_var->playlists[audio_id + 1];
+           if ((ret = parse_playlist(c, pls->url, pls, NULL)) < 0)
+                goto fail;
+        }
     }
 
     probe_best_stream(c, PRB_KEY_REND, NULL, &(c->now_rend_pls_index), &rend_index);
@@ -3354,6 +3378,7 @@ static const AVOption hls_options[] = {
     { "hls_sub_demuxer_probe_type", "subdemuxer probe type", OFFSET(hls_sub_demuxer_probe_type), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { "drm_aptr", "drm aptr", OFFSET(drm_aptr), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS },
     { "cur_audio_infoid", "current audio info id", OFFSET(cur_audio_infoid), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS },
+    { "enable_master_optimize", "only open the m3u8 required for play rather than open all m3u8 file",OFFSET(enable_master_optimize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS},
     { "abr", "get abr strategy", OFFSET(abr), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS },
     { "seg_max_retry", "Maximum number of times to reload a segment on error.", OFFSET(seg_max_retry), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
     { "enable_seg_error", "Report error if a segment on error.", OFFSET(enable_seg_error), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS},
