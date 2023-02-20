@@ -327,8 +327,8 @@ static void buffer_pool_flush(AVBufferPool *pool)
     while (pool->pool) {
         BufferPoolEntry *buf = pool->pool;
         pool->pool = buf->next;
-
-        buf->free(buf->opaque, buf->data);
+        if (buf->free)
+            buf->free(buf->opaque, buf->data);
         av_freep(&buf);
     }
 }
