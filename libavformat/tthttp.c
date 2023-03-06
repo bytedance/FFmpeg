@@ -175,6 +175,7 @@ typedef struct HTTPContext {
     int64_t mdl_load_handle;
     int mdl_format_type;
     int quic_keep_host;
+    int optimize_start_time_prerender;
 } HTTPContext;
 
 #define OFFSET(x) offsetof(HTTPContext, x)
@@ -234,6 +235,7 @@ static const AVOption options[] = {
     { "mdl_load_handle", "initial byte offset", OFFSET(mdl_load_handle), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, D },
     { "mdl_format_type", "format type video or audio", OFFSET(mdl_format_type), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, D },
     { "quic_keep_host", "quic keep host when 302", OFFSET(quic_keep_host), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, D|E},
+    { "optimize_start_time_prerender", "enable optimize start time prerender", OFFSET(optimize_start_time_prerender), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { NULL }
 };
 static int is_ipv4(char* host);
@@ -2382,13 +2384,18 @@ static int64_t http_seek_internal(URLContext *h, int64_t off, int whence, int fo
         return AVERROR(EINVAL);
     }
     if (!force_reconnect) {
-        // call by upper layer, need reset auto range and end offset
-        if (s->is_r_auto_range) {
-            s->is_r_auto_range = 0;
-            s->r_cache_mode = 0;
-            av_log(h, AV_LOG_DEBUG, "http seek reset auto range");
+        if (s->optimize_start_time_prerender && s->is_r_auto_range && s->auto_range_offset) {
+            s->end_off = off + s->auto_range_offset;
+            if (s->end_off >= s->filesize)
+                s->end_off = 0;
+        } else {
+            if (s->is_r_auto_range) {
+                s->is_r_auto_range = 0;
+                s->r_cache_mode = 0;
+                av_log(h, AV_LOG_DEBUG, "http seek reset auto range");
+            }
+            s->end_off = s->external_end_offset;
         }
-        s->end_off = s->external_end_offset;
     }
     s->off = off;
 
@@ -2493,6 +2500,8 @@ static int http_get_file_handle(URLContext *h)
 static int http_get_short_seek(URLContext *h)
 {
     HTTPContext *s = h->priv_data;
+    if (s->optimize_start_time_prerender && s->is_r_auto_range && s->auto_range_offset)
+        return 1;
     return ffurl_get_short_seek(s->hd);
 }
 #define HTTP_CLASS(flavor)                          \
