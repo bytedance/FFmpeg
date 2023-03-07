@@ -82,6 +82,7 @@ struct segment {
     int64_t previous_duration;
     int64_t duration;
     int64_t start_time;
+    int64_t reconnect_offset;
     int64_t url_offset;
     int64_t size;
     /* `start_dts` and `start_pts` are used to record
@@ -510,7 +511,7 @@ static struct segment *new_init_section(struct playlist *pls,
         /* the entire file is the init section */
         sec->size = -1;
     }
-
+    sec->reconnect_offset = 0;
     dynarray_add(&pls->init_sections, &pls->n_init_sections, sec);
 
     return sec;
@@ -1158,7 +1159,7 @@ static int parse_playlist(HLSContext *c, const char *url,
                     seg->url_offset = 0;
                     seg_offset = 0;
                 }
-
+                seg->reconnect_offset = 0;
                 seg->init_section = cur_init_section;
             }
         }
@@ -1450,10 +1451,14 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
     if (c->http_persistent)
         av_dict_set(&opts, "multiple_requests", "1", 0);
 
+    if (seg->reconnect_offset != 0) {
+       av_dict_set_int(&opts, "offset", seg->reconnect_offset, 0);
+    }
+
     if (seg->size >= 0) {
         /* try to restrict the HTTP request to the part we want
          * (if this is in fact a HTTP request) */
-        av_dict_set_int(&opts, "offset", seg->url_offset, 0);
+        av_dict_set_int(&opts, "offset", seg->url_offset + seg->reconnect_offset, 0);
         av_dict_set_int(&opts, "end_offset", seg->url_offset + seg->size, 0);
     }
 
@@ -1540,6 +1545,13 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
     }
     else
       ret = AVERROR(ENOSYS);
+
+    if (seg->reconnect_offset != 0) {
+        if(pls->input != NULL) {
+            pls->input->pos = seg->reconnect_offset;
+        }
+        seg->reconnect_offset = 0;
+    }
 
     /* Seek to the requested position. If this was a HTTP request, the offset
      * should already be where want it to, but this allows e.g. local testing
@@ -1836,30 +1848,35 @@ reload:
         seg->key_type == KEY_NONE && av_strstart(seg->url, "http", NULL)) {
         v->input_read_done = 1;
     } else {
+        if (ret != AVERROR_EOF) {
+            struct segment *cur_seg  = current_segment(v);
+            cur_seg->reconnect_offset = v->input->pos;
+        }
         ff_format_io_close(v->parent, &v->input);
     }
-    v->cur_refresh_begin_time += current_segment(v)->duration;
-    v->cur_seq_no++;
+    if (ret == AVERROR_EOF) {
+        v->cur_refresh_begin_time += current_segment(v)->duration;
+        v->cur_seq_no++;
 
-    c->cur_seq_no = v->cur_seq_no;
+        c->cur_seq_no = v->cur_seq_no;
 
-    if (c->abr) {
-        ABRStrategyCtx *abr = (ABRStrategyCtx *)c->abr;
-        int bitrate = -1;
-        if (abr->probe_bitrate)
-            bitrate = abr->probe_bitrate(c->tt_opaque, c->now_video_bitrate);
+        if (c->abr) {
+            ABRStrategyCtx *abr = (ABRStrategyCtx *)c->abr;
+            int bitrate = -1;
+            if (abr->probe_bitrate)
+                bitrate = abr->probe_bitrate(c->tt_opaque, c->now_video_bitrate);
 
-        if (bitrate > 0) {
-            c->cur_video_bitrate = bitrate;
-            av_log(c, AV_LOG_VERBOSE, "abr probe bitrate:%d\n", bitrate);
+            if (bitrate > 0) {
+                c->cur_video_bitrate = bitrate;
+                av_log(c, AV_LOG_VERBOSE, "abr probe bitrate:%d\n", bitrate);
+            }
+        }
+        if (c->cur_video_bitrate && c->cur_video_bitrate != c->now_video_bitrate &&
+            v->cur_seq_no < v->start_seq_no + v->n_segments) {
+            c->switch_exit = 1;
+            return ret;
         }
     }
-    if (c->cur_video_bitrate && c->cur_video_bitrate != c->now_video_bitrate &&
-        v->cur_seq_no < v->start_seq_no + v->n_segments) {
-        c->switch_exit = 1;
-        return ret;
-    }
-
     goto restart;
 }
 
