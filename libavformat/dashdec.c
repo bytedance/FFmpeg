@@ -1362,7 +1362,7 @@ static int parse_manifest(AVFormatContext *s, const char *url, AVIOContext *in)
 cleanup:
         /*free the document */
         xmlFreeDoc(doc);
-        xmlCleanupParser();
+        // xmlCleanupParser(); 
         xmlFreeNode(mpd_baseurl_node);
     }
 
