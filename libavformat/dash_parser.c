@@ -1307,7 +1307,7 @@ int parse_dash_manifest(DASHContext *dash_ctx, const char *buffer, int buffer_si
     cleanup:
     /*free the document */
     xmlFreeDoc(doc);
-    xmlCleanupParser();
+    // xmlCleanupParser();
     xmlFreeNode(mpd_baseurl_node);
     pthread_mutex_unlock(&g_xml_mutex);
 
