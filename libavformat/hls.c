@@ -84,8 +84,13 @@ struct segment {
     int64_t start_time;
     int64_t url_offset;
     int64_t size;
-    int64_t start_dts;
-    int64_t start_pts;
+    /* `start_dts` and `start_pts` are used to record
+     * the starting dts/pts of the current stream in this segment.
+     * Their size `timestamp_list_size` is determined by the number of streams.
+     * Their size will be initialized to playlist's `n_main_streams` */
+    int64_t *start_dts;
+    int64_t *start_pts;
+    int timestamp_list_size;
     int64_t is_discontinuety;
     char *url;
     char *key;
@@ -275,6 +280,8 @@ static void free_segment_dynarray(struct segment **segments, int n_segments)
     for (i = 0; i < n_segments; i++) {
         av_freep(&segments[i]->key);
         av_freep(&segments[i]->url);
+        av_freep(&segments[i]->start_dts);
+        av_freep(&segments[i]->start_pts);
         av_freep(&segments[i]);
     }
 }
@@ -1062,8 +1069,9 @@ static int parse_playlist(HLSContext *c, const char *url,
                 previous_duration1 += duration;
                 seg->previous_duration = is_discontinuety ? previous_duration : 0;
                 seg->is_discontinuety = is_discontinuety;
-                seg->start_dts = AV_NOPTS_VALUE;
-                seg->start_pts = AV_NOPTS_VALUE;
+                seg->timestamp_list_size = 0;
+                seg->start_dts = NULL;
+                seg->start_pts = NULL;
                 seg->start_time = total_duration;
                 total_duration += duration;
                 if (has_iv) {
@@ -2884,17 +2892,30 @@ restart:
                         int seq_no = pls->cur_seq_no - pls->start_seq_no;
                         if (seq_no < pls->n_segments && pls->main_streams[pls->pkt->stream_index]) {
                             struct segment *seg = pls->segments[seq_no];
-                            if (seg->start_dts == AV_NOPTS_VALUE || (pls->pkt->dts != AV_NOPTS_VALUE && pls->pkt->dts < seg->start_dts)) {
-                                seg->start_dts = pls->pkt->dts;
-                                seg->start_pts = pls->pkt->pts;
+                            if (pls->pkt->stream_index  >=  seg->timestamp_list_size) {
+                                int new_timestamp_list_size = pls->pkt->stream_index + 1 > pls->n_main_streams ? pls->pkt->stream_index + 1 : pls->n_main_streams;
+                                seg->start_dts = av_realloc(seg->start_dts, sizeof(int64_t) * new_timestamp_list_size);
+                                seg->start_pts = av_realloc(seg->start_pts, sizeof(int64_t) * new_timestamp_list_size);
+                                if (!seg->start_dts || !seg->start_pts) {
+                                    return AVERROR(ENOMEM);
+                                }
+                                for (int j = seg->timestamp_list_size; j < new_timestamp_list_size; j++) {
+                                    seg->start_dts[j] = AV_NOPTS_VALUE;
+                                    seg->start_pts[j] = AV_NOPTS_VALUE;
+                                }
+                                seg->timestamp_list_size = new_timestamp_list_size;
+                            }
+                            if (seg->start_dts[pls->pkt->stream_index] == AV_NOPTS_VALUE || (pls->pkt->dts != AV_NOPTS_VALUE && pls->pkt->dts < seg->start_dts[pls->pkt->stream_index])) {
+                                seg->start_dts[pls->pkt->stream_index] = pls->pkt->dts;
+                                seg->start_pts[pls->pkt->stream_index] = pls->pkt->pts;
                             }
                             int64_t pred = av_rescale_q(seg->start_time, AV_TIME_BASE_Q, pls->main_streams[pkt->stream_index]->time_base);
                             // add by teddy: use base time for correct timeStamp
                             if (pls->pkt->dts != AV_NOPTS_VALUE) {
-                                pls->pkt->dts = pls->pkt->dts - seg->start_dts + pred;
+                                pls->pkt->dts = pls->pkt->dts - seg->start_dts[pls->pkt->stream_index] + pred;
                             }
                             if (pls->pkt->pts != AV_NOPTS_VALUE) {
-                                pls->pkt->pts = pls->pkt->pts - seg->start_pts + pred;
+                                pls->pkt->pts = pls->pkt->pts - seg->start_pts[pls->pkt->stream_index] + pred;
                             }
                         }
                     }
