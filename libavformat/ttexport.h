@@ -176,4 +176,10 @@ int tt_io_init_context(AVIOContext *s,
 void tt_make_absolute_url(char *buf, int size, const char *base,
                           const char *rel);
 
+/**
+ * Check if the user has requested to interrupt a blocking function
+ * associated with cb.
+ */
+int tt_check_interrupt(AVIOInterruptCB *cb);
+
 #endif /* AVFORMAT_TTEXPORT_H */

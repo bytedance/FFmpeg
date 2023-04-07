@@ -45,6 +45,8 @@ TT_DUMMY_PROTOCOL(quic);
 TT_DUMMY_PROTOCOL(live);
 TT_DUMMY_PROTOCOL(httpx);
 TT_DUMMY_PROTOCOL(thirdparty);
+TT_DUMMY_PROTOCOL(hlsproxy);
+TT_DUMMY_PROTOCOL(memorydatasource);
 
 int tt_register_protocol(URLProtocol *prot, int protocol_size)
 {
@@ -63,6 +65,10 @@ int tt_register_protocol(URLProtocol *prot, int protocol_size)
             memcpy(&ff_live_protocol, prot, protocol_size);
         } else if (strcmp(prot->name, "httpx") == 0) {
             memcpy(&ff_httpx_protocol, prot, protocol_size);
+        } else if (strcmp(prot->name, "hlsproxy") == 0) {
+            memcpy(&ff_hlsproxy_protocol, prot, protocol_size);
+        } else if (strcmp(prot->name, "memorydatasource") == 0) {
+            memcpy(&ff_memorydatasource_protocol, prot, protocol_size);
         } else {
             ret = -1;
         }
@@ -295,4 +301,8 @@ void tt_make_absolute_url(char *buf, int size, const char *base,
         av_strlcat(buf, path_query, size);
         av_free(path_query);
     }
+}
+
+int tt_check_interrupt(AVIOInterruptCB *cb) {
+    return ff_check_interrupt(cb);
 }

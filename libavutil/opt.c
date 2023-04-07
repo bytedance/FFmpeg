@@ -163,6 +163,9 @@ static int write_number(void *obj, const AVOption *o, void *dst, double num, int
         else
             *(AVRational *)dst = av_d2q(num * intnum / den, 1 << 24);
         break;
+    case AV_OPT_TYPE_IPTR:
+        *(intptr_t*)dst = intnum;
+        break;
     default:
         return AVERROR(EINVAL);
     }
@@ -469,7 +472,7 @@ static int set_string_ptr(void *obj, const AVOption *o, const char *val, intptr_
     if (!val)
         *dst = 0;
     else {
-        int64_t value = strtoll(val, NULL, 10);
+        uint64_t value = strtoull(val, NULL, 10);
         *dst = value;
     }
     return 0;

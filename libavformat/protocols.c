@@ -82,11 +82,12 @@ extern const URLProtocol ff_libzmq_protocol;
 // External protocols register by tt_register_protocol
 extern const URLProtocol ff_mem_protocol;
 extern const URLProtocol ff_mdl_protocol;
+extern const URLProtocol ff_hlsproxy_protocol;
 extern const URLProtocol ff_live_protocol;
 extern const URLProtocol ff_quic_protocol;
 extern const URLProtocol ff_httpx_protocol;
 extern const URLProtocol ff_thirdparty_protocol;
-
+extern const URLProtocol ff_memorydatasource_protocol;
 #include "libavformat/protocol_list.c"
 
 #if FF_API_CHILD_CLASS_NEXT

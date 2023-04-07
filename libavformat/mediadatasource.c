@@ -37,17 +37,24 @@
 //follow android original design
 #define BUFFER_SIZE 64 * 1024
 
+#define MDS_VERSION_0 0
+#define MDS_VERSION_1 1 
+
 typedef struct Context {
     AVClass        *class;
 
     /* options */
+    int             fd;
+    int             version;
+    char*           file_path;
     int64_t         logical_pos;
     int64_t         logical_size;
-
     jobject         media_data_source;
     jbyteArray      jbuffer;
     jmethodID       readMethod;
     jmethodID       closeMethod;
+    jmethodID       readMethod2;
+    jmethodID       closeMethod2;
 } Context;
 
 static int mds_open(URLContext *h, const char *arg, int flags, AVDictionary **options)
@@ -57,8 +64,18 @@ static int mds_open(URLContext *h, const char *arg, int flags, AVDictionary **op
     c->jbuffer = NULL;
     c->readMethod = NULL;
     c->media_data_source = NULL;
+    c->logical_pos = 0;
+    c->logical_size = -1;
+    c->fd = -1;
+    c->version = MDS_VERSION_0;
+    c->file_path = NULL;
+    c->readMethod2 = NULL;
+    c->closeMethod2 = NULL;
+    if(h->interrupt_callback.callback != NULL && ff_check_interrupt(&h->interrupt_callback)) {
+        return AVERROR_EXIT;
+    }
     jobject media_data_source = NULL;
-    char *final = NULL;
+    char *endPtr = NULL;
 
     JNIEnv *env = NULL;
     env = ff_jni_get_env(NULL);
@@ -66,13 +83,20 @@ static int mds_open(URLContext *h, const char *arg, int flags, AVDictionary **op
         av_log(h, AV_LOG_ERROR, "non java vm");
         return AVERROR(EINVAL);
     }
-    
-    av_strstart(arg, "mediadatasource:", &arg);
+    av_log(h, AV_LOG_INFO, "mds arg:%s", arg);
+    //Example:"mediadatasource://4337344576/mds_default_file"
+    av_strstart(arg, "mediadatasource://", &arg);
 
-    media_data_source = (jobject) (intptr_t) strtoll(arg, &final, 10);
+    media_data_source = (jobject) (intptr_t) strtoll(arg, &endPtr, 10);
     if (!media_data_source) {
         av_log(h, AV_LOG_ERROR, "non media datasource pointer");
         return AVERROR(EINVAL);
+    }
+    
+    if (endPtr) {
+        int length = strlen(endPtr);
+        c->file_path =  malloc(length + 1);
+        memcpy(c->file_path, endPtr, length + 1);
     }
 
     c->media_data_source = (*env)->NewGlobalRef(env, media_data_source);
@@ -80,75 +104,110 @@ static int mds_open(URLContext *h, const char *arg, int flags, AVDictionary **op
         av_log(h, AV_LOG_ERROR, "new mediadatasource failed");
         return AVERROR(ENOMEM);
     }
-
+    
     jclass cls = (*env)->GetObjectClass(env, c->media_data_source);
     if (cls == NULL) {
         av_log(h, AV_LOG_ERROR, "could not found media datasource class");
         return AVERROR(EINVAL);
     }
 
-    jmethodID method = (*env)->GetMethodID(env, cls, "getSize", "()J");
-    if (method == NULL) {
-        av_log(h, AV_LOG_ERROR, "could not find getSize method");
-        goto fail;
+    jmethodID methodVersion = (*env)->GetMethodID(env, cls, "getMDSVersion", "()I");
+    if (methodVersion == NULL) {
+        av_log(h, AV_LOG_ERROR, "could not find getMDSVersion method");
+    } else {
+        c->version = (*env)->CallIntMethod(env, media_data_source, methodVersion);
+        if (ff_jni_exception_check(env, 1, NULL) < 0) {
+            av_log(h, AV_LOG_ERROR, "call getMDSVersion method failed");
+            goto fail;
+        }
     }
+    av_log(h, AV_LOG_INFO, "mds interface verison:%d",c->version);
 
-    c->readMethod = (*env)->GetMethodID(env, cls, "readAt", "(J[BII)I");
-    if (c->readMethod == NULL) {
-        av_log(h, AV_LOG_ERROR, "could not find readAt method");
-        goto fail;
+    if (c->version == MDS_VERSION_0) {
+        c->readMethod = (*env)->GetMethodID(env, cls, "readAt", "(J[BII)I");
+        if (c->readMethod == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find readAt method");
+            goto fail;
+        }
+
+        c->closeMethod = (*env)->GetMethodID(env, cls, "close", "()V");
+        if (c->closeMethod == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find close method");
+            goto fail;
+        }
+
+        jmethodID method = (*env)->GetMethodID(env, cls, "getSize", "()J");
+        if (method == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find getSize method");
+            goto fail;
+        }
+        
+        c->logical_size = (*env)->CallLongMethod(env, media_data_source, method);
+        if (ff_jni_exception_check(env, 1, NULL) < 0) {
+            av_log(h, AV_LOG_ERROR, "call read method failed");
+            goto fail;
+        } else if (c->logical_size < 0) {
+            h->is_streamed = 1;
+            c->logical_size = -1;
+        }
+
+        jbyteArray tmp = (*env)->NewByteArray(env, BUFFER_SIZE);
+        if (ff_jni_exception_check(env, 1, NULL) < 0 || !tmp) {
+            av_log(h, AV_LOG_ERROR, "NewByteArray failed");
+            goto fail;
+        }
+        c->jbuffer = (*env)->NewGlobalRef(env,tmp);
+        (*env)->DeleteLocalRef(env, tmp);
+
+    } else if (c->version == MDS_VERSION_1) {
+        jmethodID open_method = (*env)->GetMethodID(env, cls, "open", "(Ljava/lang/String;)I");
+        if (open_method == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find open method");
+            goto fail;
+        } 
+
+        jstring file_path = (*env)->NewStringUTF(env, c->file_path);
+        c->fd = (*env)->CallIntMethod(env, media_data_source, open_method, file_path);
+        if (ff_jni_exception_check(env, 1, NULL) < 0) {
+            av_log(h, AV_LOG_ERROR, "call open method failed");
+            goto fail;
+        } else if (c->fd < 0) {
+            av_log(h, AV_LOG_ERROR, "open file:%s failed",c->file_path);
+            goto fail;
+        }
+
+        jmethodID getSize_method = (*env)->GetMethodID(env, cls, "getSize", "(I)J");
+        if (getSize_method == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find getSize method");
+            goto fail;
+        }
+        
+        c->logical_size = (*env)->CallLongMethod(env, media_data_source, getSize_method, c->fd);
+        if (ff_jni_exception_check(env, 1, NULL) < 0) {
+            av_log(h, AV_LOG_ERROR, "call getSize method failed");
+            goto fail;
+        } else if (c->logical_size < 0) {
+            h->is_streamed = 1;
+            c->logical_size = -1;
+        }
+
+        c->readMethod2 = (*env)->GetMethodID(env, cls, "readAt", "(IJLjava/nio/ByteBuffer;II)I");
+        if (c->readMethod2 == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find readAt2(ByteBuffer) method");
+            goto fail;
+        }
+
+        c->closeMethod2  = (*env)->GetMethodID(env, cls, "close", "(I)I");
+        if (c->closeMethod2 == NULL) {
+            av_log(h, AV_LOG_ERROR, "could not find close2 method");
+            goto fail;
+        } 
     }
-
-    c->closeMethod = (*env)->GetMethodID(env, cls, "close", "()V");
-    if (c->closeMethod == NULL) {
-        av_log(h, AV_LOG_ERROR, "could not find close method");
-        goto fail;
-    }
-
-    c->logical_size = (*env)->CallLongMethod(env, media_data_source, method);
-    if (ff_jni_exception_check(env, 1, NULL) < 0) {
-        av_log(h, AV_LOG_ERROR, "call read method failed");
-        goto fail;
-    } else if (c->logical_size < 0) {
-        h->is_streamed = 1;
-        c->logical_size = -1;
-    }
-
-    jbyteArray tmp = (*env)->NewByteArray(env, BUFFER_SIZE);
-    if (ff_jni_exception_check(env, 1, NULL) < 0 || !tmp) {
-        av_log(h, AV_LOG_ERROR, "NewByteArray failed");
-        goto fail;
-    }
-
-    c->jbuffer = (*env)->NewGlobalRef(env,tmp);
-    (*env)->DeleteLocalRef(env, tmp);
+    av_log(h, AV_LOG_INFO, "mds file:%s, size:%lld", arg, c->logical_size);
     return 0;
 fail:
     (*env)->DeleteLocalRef(env,cls);
     return AVERROR(EINVAL);
-}
-
-static int mds_close(URLContext *h)
-{
-    Context *c = h->priv_data;
-    JNIEnv *env = NULL;
-
-    env = ff_jni_get_env(NULL);
-    if (!env) {
-        av_log(h, AV_LOG_ERROR, "non java vm");
-        return AVERROR(EINVAL);
-    }
-
-    if (c->jbuffer != NULL)
-        (*env)->DeleteGlobalRef(env, c->jbuffer);
-
-    if (c->media_data_source != NULL) {
-        (*env)->CallVoidMethod(env, c->media_data_source, c->closeMethod);
-        ff_jni_exception_check(env, 1, NULL);
-        (*env)->DeleteGlobalRef(env, c->media_data_source);
-    }
-
-    return 0;
 }
 
 static int mds_read(URLContext *h, unsigned char *buf, int size)
@@ -165,11 +224,18 @@ static int mds_read(URLContext *h, unsigned char *buf, int size)
 
     if (!c->media_data_source) 
         return AVERROR(EINVAL);
-
+    
     if (size > BUFFER_SIZE)
         size = BUFFER_SIZE;
-
-    ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod, c->logical_pos, c->jbuffer, 0, size);
+    if (c->version == MDS_VERSION_0) {
+        ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod, c->logical_pos, c->jbuffer, 0, size);
+    } else if (c->version == MDS_VERSION_1) {
+        jobject directBuffer = (*env)->NewDirectByteBuffer(env, (void *)buf, size);
+        // av_log(h, AV_LOG_INFO, "mds NewDirectByteBuffer:%lld,buffer:%lld, size:%d",directBuffer, buf, size);
+        ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod2, c->fd, c->logical_pos, directBuffer, 0, size);
+        (*env)->DeleteLocalRef(env, directBuffer);
+    }
+    av_log(h, AV_LOG_DEBUG, "mds recv size:%d", ret);
     if (ff_jni_exception_check(env, 1, NULL) < 0)
         return AVERROR(EIO);
     else if (ret < 0)
@@ -177,10 +243,14 @@ static int mds_read(URLContext *h, unsigned char *buf, int size)
     else if (ret == 0)
         return AVERROR(EAGAIN);
 
-    (*env)->GetByteArrayRegion(env, c->jbuffer, 0, ret, (jbyte*)buf);
+    if (c->version == MDS_VERSION_0) {
+       (*env)->GetByteArrayRegion(env, c->jbuffer, 0, ret, (jbyte*)buf);
+    } else if (c->version == MDS_VERSION_1) {
+        
+    }
+    
     if (ff_jni_exception_check(env, 1, NULL) < 0)
         return AVERROR(EIO);
-
     c->logical_pos += ret;
     return ret;
 }
@@ -216,7 +286,13 @@ static int64_t mds_seek(URLContext *h, int64_t pos, int whence)
     if (new_logical_pos < 0)
         return AVERROR(EINVAL);
 
-    ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod, new_logical_pos, c->jbuffer, 0, 0);
+
+    if (c->version == MDS_VERSION_0) {
+       ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod, new_logical_pos, c->jbuffer, 0, 0);
+    } else if (c->version == MDS_VERSION_1) {
+       ret = (*env)->CallIntMethod(env, c->media_data_source, c->readMethod2, c->fd, new_logical_pos, NULL, 0, 0);
+    }
+    av_log(h, AV_LOG_INFO, "mds seek:%lld ret:%d",new_logical_pos, ret);
     if (ff_jni_exception_check(env, 1, NULL) < 0)
         return AVERROR(EIO);
     else if (ret < 0)
@@ -224,6 +300,39 @@ static int64_t mds_seek(URLContext *h, int64_t pos, int whence)
 
     c->logical_pos = new_logical_pos;
     return c->logical_pos;
+}
+
+static int mds_close(URLContext *h)
+{
+    Context *c = h->priv_data;
+    JNIEnv *env = NULL;
+
+    env = ff_jni_get_env(NULL);
+    if (!env) {
+        av_log(h, AV_LOG_ERROR, "non java vm");
+        return AVERROR(EINVAL);
+    }
+    
+    if (c->file_path) {
+       av_log(h, AV_LOG_INFO, "mds close file:%s", c->file_path);
+       free(c->file_path);
+       c->file_path = NULL;
+    }
+    
+    if (c->jbuffer != NULL)
+        (*env)->DeleteGlobalRef(env, c->jbuffer);
+    
+    if (c->media_data_source != NULL) {
+        if (c->version == MDS_VERSION_0) {
+            (*env)->CallVoidMethod(env, c->media_data_source, c->closeMethod);
+        } else if (c->version == MDS_VERSION_1) {
+            (*env)->CallIntMethod(env, c->media_data_source, c->closeMethod2, c->fd);
+        }
+        ff_jni_exception_check(env, 1, NULL);
+        (*env)->DeleteGlobalRef(env, c->media_data_source);
+    }
+
+    return 0;
 }
 
 #define OFFSET(x) offsetof(Context, x)
@@ -251,4 +360,5 @@ URLProtocol ff_mediadatasource_protocol = {
     .url_close           = mds_close,
     .priv_data_size      = sizeof(Context),
     .priv_data_class     = &mediadatasource_context_class,
+    .default_whitelist   = "mediadatasource,crypto"
 };
