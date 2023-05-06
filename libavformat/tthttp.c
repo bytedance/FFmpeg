@@ -346,7 +346,7 @@ static int http_change_hostname(HTTPContext*s) {
     ff_url_join(hoststr, sizeof(hoststr), NULL, NULL, hostname, port, NULL);
     av_log(NULL, AV_LOG_DEBUG, "hostname %s",hostname);
     
-    if (s->quic_keep_host && (is_ipv4(hostname || is_ipv6(hostname)))) {
+    if (s->quic_keep_host && (is_ipv4(hostname) || is_ipv6(hostname))) {
         return 0;
     }
     new_host_len = strlen(hoststr);
