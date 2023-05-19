@@ -7857,7 +7857,6 @@ static int mov_read_header(AVFormatContext *s)
 
     if (pb->error != 0 && mov->handle_header_error) {
         av_log(s, AV_LOG_ERROR, "mov_read_header pb error:%d", pb->error);
-        mov_read_close(s);
         err = pb->error;
         goto fail;
     }
