@@ -1308,7 +1308,7 @@ retry_duration:
             goto leave;
         }
 
-        if (st->codecpar->codec_id == AV_CODEC_ID_H264 
+        if (st->codecpar->codec_id == AV_CODEC_ID_H264
             || st->codecpar->codec_id == AV_CODEC_ID_MPEG4
             || st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
             // sign extension
@@ -1359,6 +1359,10 @@ retry_duration:
     if (flv->flv_speed_measurement && ret > 0 && tag_start_time != 0 && (stream_type == FLV_STREAM_TYPE_VIDEO || stream_type == FLV_STREAM_TYPE_AUDIO)) {
         int64_t cur_time = av_gettime();
         int64_t time_diff = cur_time - tag_start_time;
+        int key_frame = stream_type == FLV_STREAM_TYPE_AUDIO || ((flags & FLV_VIDEO_FRAMETYPE_MASK) == FLV_FRAME_KEY) || stream_type == FLV_STREAM_TYPE_DATA;
+        char ret_str[1024];
+        snprintf(ret_str, 1024, "{\"key_frame\":%d,\"tag_size\":%d,\"download_time\":%lld}", key_frame, ret, time_diff);
+        ff_inetwork_info_callback(0, flv->aptr, stream_type == FLV_STREAM_TYPE_VIDEO ? IsFlvVideoTagInfo : IsFlvAudioTagInfo, time_diff, ret_str);
         tag_start_time = 0;
         char ret_str[16];
         snprintf(ret_str, 16, "%d", ret);
@@ -1404,7 +1408,7 @@ retry_duration:
         ff_flv_senc_decrypt_frame(codec_id, &flv->crypto_ctx, pkt);
     }
 
-    // packet reading corrupt   
+    // packet reading corrupt
     if (flv->check_corrupt_packet && (pkt->flags & AV_PKT_FLAG_CORRUPT))
         return ret;
 
