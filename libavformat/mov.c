@@ -1231,6 +1231,15 @@ static void set_frag_stream(MOVFragmentIndex *frag_index, int id)
     item->current = -1;
 }
 
+static MOVFragmentIndexItem * get_current_frag_index_item(MOVFragmentIndex *frag_index) 
+{
+    if (frag_index->current < 0 ||
+        frag_index->current >= frag_index->nb_items)
+        return NULL;
+
+    return &frag_index->item[frag_index->current];
+}
+
 static MOVFragmentStreamInfo * get_current_frag_stream_info(
     MOVFragmentIndex *frag_index)
 {
@@ -1391,6 +1400,7 @@ static int update_frag_index(MOVContext *c, int64_t offset)
 
     item = &c->frag_index.item[index];
     item->headers_read = 0;
+    item->read_compelete = 0;
     item->current = 0;
     item->nb_stream_info = c->fc->nb_streams;
     item->moof_offset = offset;
@@ -1443,6 +1453,10 @@ static int mov_read_moof(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     ret = mov_read_default(c, pb, atom);
     if (ret < 0) {
         return ret;
+    }
+    MOVFragmentIndexItem * frag_index_item = get_current_frag_index_item(&c->frag_index);
+    if (frag_index_item) {
+        frag_index_item->read_compelete = 1;
     }
     frag_stream_info = get_current_frag_stream_info(&c->frag_index);
     if (frag_stream_info) {
@@ -8135,7 +8149,7 @@ static int mov_switch_root(AVFormatContext *s, int64_t target, int index)
         mov->frag_index.current = index;
         if (index + 1 < mov->frag_index.nb_items)
             mov->next_root_atom = mov->frag_index.item[index + 1].moof_offset;
-        if (mov->frag_index.item[index].headers_read)
+        if (mov->frag_index.item[index].headers_read && (!mov->enable_seek_interrupt || mov->frag_index.item[index].read_compelete))
             return 0;
         mov->frag_index.item[index].headers_read = 1;
     }
@@ -8393,7 +8407,8 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     index = search_frag_timestamp(&mov->frag_index, st, timestamp);
     if (index < 0)
         index = 0;
-    if (!mov->frag_index.item[index].headers_read)
+    if (!mov->frag_index.item[index].headers_read || 
+        (mov->enable_seek_interrupt && !mov->frag_index.item[index].read_compelete))
         return mov_switch_root(s, -1, index);
     if (index + 1 < mov->frag_index.nb_items)
         mov->next_root_atom = mov->frag_index.item[index + 1].moof_offset;
@@ -8873,6 +8888,8 @@ static const AVOption mov_options[] = {
     { "audio_seek_pts", "audio seek pts", OFFSET(audio_seek_pts),
         AV_OPT_TYPE_INT64, { .i64 = AV_NOPTS_VALUE }, INT64_MIN, INT64_MAX, FLAGS },
     { "enable_single_sidx_opt", "enable single sidx stream optimize", OFFSET(enable_single_sidx_opt),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "enable_seek_interrupt", "enable seek interrupt", OFFSET(enable_seek_interrupt),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
