@@ -2355,7 +2355,7 @@ static int parse_mem_playlist(AVFormatContext *s, int type, char **mem)
     }
 
     if (url == NULL) {
-        av_log(NULL, AV_LOG_ERROR, "mem:%s,url is null\n",*mem);
+        av_log(s, AV_LOG_ERROR, "mem:%s,url is null\n",*mem);
         return -1;
     }
     struct variant *var = new_variant(c, NULL, url, NULL);
