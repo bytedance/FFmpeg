@@ -118,6 +118,12 @@ static inline int pthread_mutex_lock(pthread_mutex_t *m)
     AcquireSRWLockExclusive(m);
     return 0;
 }
+
+static inline int pthread_mutex_trylock(pthread_mutex_t *m)
+{
+    return 0;
+}
+
 static inline int pthread_mutex_unlock(pthread_mutex_t *m)
 {
     ReleaseSRWLockExclusive(m);

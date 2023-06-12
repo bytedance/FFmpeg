@@ -45,7 +45,6 @@
 #if HAVE_WINDOWS_H
 #include <windows.h>
 #endif
-#include <strings.h>
 
 #include "avformat.h"
 #include "http.h"
@@ -463,10 +462,10 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
                     continue;
                 }
 
-                if (!strcasecmp(pKey[0], "suggest_protocol")){
+                if (!av_strcasecmp(pKey[0], "suggest_protocol")){
                     const char* pbegin = pKey[1] + av_str_strip(pKey[1], ' ');
                     size_t index = av_str_strip_r(pbegin, ' ');
-                    if (!strncasecmp("quic", pbegin, index)) {
+                    if (!av_strncasecmp("quic", pbegin, index)) {
                         av_log(h, AV_LOG_DEBUG, "use suggest_protocol: quic");
                         lower_proto = "quic";
                         use_proxy   = 0;
@@ -474,7 +473,7 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
                             port = 80;
                     }
                 }
-                if (!strcasecmp(pKey[0], "Host")) {
+                if (!av_strcasecmp(pKey[0], "Host")) {
                     const char* pbegin = pKey[1] + av_str_strip(pKey[1], ' ');
                     av_dict_set(options, "host_domain", pbegin, 0);
                     av_dict_set(options, "verifyhost", pbegin, 0);
@@ -555,7 +554,7 @@ static int http_get_context_type(const char* header, char* contentType, int buff
     for (i = 0; i<bufLen; i++) {
         const char* cur = header + i;
         if (*cur == 'C' || *cur == 'c') {
-            if (strncasecmp("Content-Type:", cur, 13) == 0) {
+            if (av_strncasecmp("Content-Type:", cur, 13) == 0) {
                 const int offset = 14;
                 size_t len = strlen(cur);
                 if (len > offset && len - offset < MAX_URL_SIZE) {
@@ -588,7 +587,7 @@ static int http_check_content_type(HTTPContext*s) {
             int contentSize = strlen(contentType);
             while( http_split_str(&str, ' ', &len) == 0 ) {
                 if (contentSize == len) {
-                    if( strncasecmp(str, contentType, len) == 0 ) {
+                    if( av_strncasecmp(str, contentType, len) == 0 ) {
                         find = 1;
                         break;
                     }
