@@ -1362,11 +1362,8 @@ retry_duration:
         int key_frame = stream_type == FLV_STREAM_TYPE_AUDIO || ((flags & FLV_VIDEO_FRAMETYPE_MASK) == FLV_FRAME_KEY) || stream_type == FLV_STREAM_TYPE_DATA;
         char ret_str[1024];
         snprintf(ret_str, 1024, "{\"key_frame\":%d,\"tag_size\":%d,\"download_time\":%lld}", key_frame, ret, time_diff);
-        ff_inetwork_info_callback(0, flv->aptr, stream_type == FLV_STREAM_TYPE_VIDEO ? IsFlvVideoTagInfo : IsFlvAudioTagInfo, time_diff, ret_str);
-        tag_start_time = 0;
-        char ret_str[16];
-        snprintf(ret_str, 16, "%d", ret);
         tt_network_info_callback(flv->tt_opaque, stream_type == FLV_STREAM_TYPE_VIDEO ? IsFlvVideoTagInfo : IsFlvAudioTagInfo, time_diff, ret_str);
+        tag_start_time = 0;
     }
     if (ret < 0)
         return ret;
