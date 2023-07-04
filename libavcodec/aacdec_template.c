@@ -3451,7 +3451,7 @@ static int aac_decode_frame(AVCodecContext *avctx, void *data,
                                        AV_PKT_DATA_JP_DUALMONO,
                                        &jp_dualmono_size);
 
-    if (new_extradata) {
+    if (ac->handle_audio_extradata && new_extradata) {
         /* discard previous configuration */
         ac->oc[1].status = OC_NONE;
         err = decode_audio_specific_config(ac, ac->avctx, &ac->oc[1].m4ac,
@@ -3551,6 +3551,8 @@ static const AVOption options[] = {
     {"main", "Select Main/Left channel", 0, AV_OPT_TYPE_CONST, {.i64= 1}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"sub" , "Select Sub/Right channel", 0, AV_OPT_TYPE_CONST, {.i64= 2}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
     {"both", "Select both channels",     0, AV_OPT_TYPE_CONST, {.i64= 0}, INT_MIN, INT_MAX, AACDEC_FLAGS, "dual_mono_mode"},
+
+    { "handle_audio_extradata", "handle audio extradata", offsetof(AACContext, handle_audio_extradata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1,  AACDEC_FLAGS },
     { "fix_sbr_skip_samples", "fix HE AAC SBR skip samples multiplier incorrect", offsetof(AACContext, fix_sbr_skip_samples), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1,  AACDEC_FLAGS},
 
     {NULL},
