@@ -442,7 +442,7 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
         lower_proto = "quic";
         use_proxy   = 0;
         if (port < 0)
-            port = 443;
+            port = 80;
     }
 
     if (s->headers) {
