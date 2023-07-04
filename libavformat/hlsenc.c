@@ -43,6 +43,7 @@
 #include "libavutil/log.h"
 #include "libavutil/time.h"
 #include "libavutil/time_internal.h"
+#include "libavutil/eval.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -1240,7 +1241,7 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
             vs->discontinuity = 1;
         } else if (av_strstart(line, "#EXTINF:", &ptr)) {
             is_segment = 1;
-            vs->duration = atof(ptr);
+            vs->duration = av_strtod(ptr, NULL);
         } else if (av_stristart(line, "#EXT-X-KEY:", &ptr)) {
             ptr = av_stristr(line, "URI=\"");
             if (ptr) {
