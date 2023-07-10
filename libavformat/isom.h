@@ -140,6 +140,7 @@ typedef struct MOVFragmentIndexItem {
     int headers_read;
     int current;
     int nb_stream_info;
+    int read_compelete;
     MOVFragmentStreamInfo * stream_info;
 } MOVFragmentIndexItem;
 
@@ -320,6 +321,7 @@ typedef struct MOVContext {
     int64_t last_test_sample_pos;
     int64_t max_pos_back_diff;
     int64_t audio_seek_pts;
+    int enable_seek_interrupt;
     int need_found_moof;
     int found_moof;
     int is_fmp4;
