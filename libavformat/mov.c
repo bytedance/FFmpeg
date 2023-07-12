@@ -8412,6 +8412,8 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
         return mov_switch_root(s, -1, index);
     if (index + 1 < mov->frag_index.nb_items)
         mov->next_root_atom = mov->frag_index.item[index + 1].moof_offset;
+    else if (mov->fix_fmp4_seek_stuck)
+        mov->next_root_atom = 0;
     mov->frag_index.current = index;
 
     return 0;
@@ -8890,6 +8892,8 @@ static const AVOption mov_options[] = {
     { "enable_single_sidx_opt", "enable single sidx stream optimize", OFFSET(enable_single_sidx_opt),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "enable_seek_interrupt", "enable seek interrupt", OFFSET(enable_seek_interrupt),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "fix_fmp4_seek_stuck", "fix fmp4 seek stuck", OFFSET(fix_fmp4_seek_stuck),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
