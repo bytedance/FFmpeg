@@ -700,12 +700,13 @@ static CFDictionaryRef videotoolbox_buffer_attributes_create(int width,
     CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfacePropertiesKey, io_surface_properties);
     CFDictionarySetValue(buffer_attributes, kCVPixelBufferWidthKey, w);
     CFDictionarySetValue(buffer_attributes, kCVPixelBufferHeightKey, h);
-#if TARGET_OS_IPHONE
-    CFDictionarySetValue(buffer_attributes, kCVPixelBufferOpenGLESCompatibilityKey, kCFBooleanTrue);
-#else
-    CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfaceOpenGLTextureCompatibilityKey, kCFBooleanTrue);
+#if !defined(TARGET_OS_VISION) || !TARGET_OS_VISION
+    #if TARGET_OS_IPHONE
+        CFDictionarySetValue(buffer_attributes, kCVPixelBufferOpenGLESCompatibilityKey, kCFBooleanTrue);
+    #else
+	    CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfaceOpenGLTextureCompatibilityKey, kCFBooleanTrue);
+    #endif
 #endif
-
     CFRelease(io_surface_properties);
     CFRelease(cv_pix_fmt);
     CFRelease(w);
