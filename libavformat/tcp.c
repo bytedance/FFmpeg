@@ -52,6 +52,7 @@ typedef struct TCPContext {
     int user_flag;
     intptr_t tt_opaque;
     char ip_addr[132];
+    int64_t network_handle;
 } TCPContext;
 
 #define OFFSET(x) offsetof(TCPContext, x)
@@ -70,6 +71,7 @@ static const AVOption options[] = {
     { "is_first_packet", "Mark data is first packet or not", OFFSET(is_first_packet), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { "user_flag", "user flag", OFFSET(user_flag), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = D|E },
     { "tt_opaque", "set app ptr for ffmpeg", OFFSET(tt_opaque), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, .flags = D|E },
+    { "network_handle", "network_handle", OFFSET(network_handle), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, .flags = D|E },
     { NULL }
 };
 
@@ -84,6 +86,11 @@ const char *tcp_get_ip_addr(URLContext *h);
 static void customize_fd(void *ctx, int fd)
 {
     TCPContext *s = ctx;
+    /* Bind the socket to the specified network handle.
+       If unspecified or setting fails, default network is used. */
+    if (s->network_handle > 0) {
+        ff_bind_to_network(s->network_handle, fd);
+    }
     /* Set the socket's send or receive buffer sizes, if specified.
        If unspecified or setting fails, system default is used. */
     if (s->recv_buffer_size > 0) {
