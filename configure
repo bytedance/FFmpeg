@@ -4903,6 +4903,9 @@ case "$arch" in
     aarch64|arm64)
         arch="aarch64"
     ;;
+    arm64_32)
+        arch="arm64_32"
+    ;;
     arm*|iPad*|iPhone*)
         arch="arm"
     ;;
