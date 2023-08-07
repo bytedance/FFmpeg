@@ -322,6 +322,7 @@ typedef struct MOVContext {
     int64_t max_pos_back_diff;
     int64_t audio_seek_pts;
     int enable_seek_interrupt;
+    int fix_fmp4_seek_stuck;
     int need_found_moof;
     int found_moof;
     int is_fmp4;

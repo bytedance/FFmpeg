@@ -351,4 +351,5 @@ int ff_connect_parallel(struct addrinfo *addrs, int timeout_ms_per_address,
                         int parallel, URLContext *h, int *fd,
                         void (*customize_fd)(void *, int), void *customize_ctx);
 
+int ff_bind_to_network(int64_t network_handle, int socket_fd);
 #endif /* AVFORMAT_NETWORK_H */

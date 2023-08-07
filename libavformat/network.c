@@ -19,6 +19,7 @@
  */
 
 #include <fcntl.h>
+#include <dlfcn.h>
 #include "network.h"
 #include "tls.h"
 #include "ttexport.h"
@@ -641,4 +642,44 @@ void ff_dns_free(void* ctx) {
     if (ff_support_external_dns()) {
         _ff_dns_free(ctx);
     }
+}
+
+int ff_bind_to_network(int64_t network_handle, int socket_fd)
+{
+    av_log(NULL, AV_LOG_INFO, "Begin to bind to socket, and net_id is %" PRId64, network_handle);
+    int rv = -1;
+#if defined(__ANDROID__)
+    if (network_handle == -1) {
+        av_log(NULL, AV_LOG_ERROR, "Invalid net_id");
+        return -1;
+    }
+    // require android api_version >= MARSHMALLOW(23)
+    typedef int (*MarshmallowSetNetworkForSocket)(int64_t netId, int socketFd);
+    static MarshmallowSetNetworkForSocket marshmallowSetNetworkForSocket;
+    if (!marshmallowSetNetworkForSocket) {
+        void* dl = dlopen("libandroid.so", RTLD_NOW);
+        if (dl == NULL) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to load libandroid.so: %s\n", dlerror());
+            return -1;
+        }
+        marshmallowSetNetworkForSocket = (MarshmallowSetNetworkForSocket)dlsym(dl, "android_setsocknetwork");
+        if (marshmallowSetNetworkForSocket == NULL) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to load libandroid.so: %s\n", dlerror());
+            dlclose(dl);
+            return -1;
+        }
+    }
+    rv = marshmallowSetNetworkForSocket(network_handle, socket_fd);
+#endif
+#if defined(__APPLE__)
+    uint32_t index = (uint32_t)network_handle;
+    if (index == 0) {
+        av_log(NULL, AV_LOG_ERROR, "Invalid net_id");
+        return -1;
+    }
+    rv = setsockopt(socket_fd, IPPROTO_IP, IP_BOUND_IF, &index, sizeof(index));
+#endif
+
+    av_log(NULL, AV_LOG_INFO, "Bind result is %d\n", rv);
+    return rv;
 }
