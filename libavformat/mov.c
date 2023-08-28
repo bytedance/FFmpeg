@@ -8227,8 +8227,16 @@ static int avio_interrupt_callback(AVIOContext *pb) {
     return ff_check_interrupt(&cc->interrupt_callback);
 }
 
-static int should_retry(AVIOContext *pb, int error_code, int retry_eof) {
-    int ret = retry_eof ? avio_interrupt_callback(pb) : 0;
+static int check_interrupt(AVIOContext *pb, AVFormatContext *s, int useFormat) {
+    if(useFormat != 1 || !s) {
+        return avio_interrupt_callback(pb);
+    } else {
+        return ff_check_interrupt(&s->interrupt_callback);
+    }
+}
+
+static int should_retry(AVIOContext *pb, int error_code, int retry_eof, MOVContext *mov) {
+    int ret = retry_eof ? check_interrupt(pb, mov->fc, mov->fix_retry_eof) : 0;
     if (!ret && (error_code == AVERROR_EOF || avio_feof(pb))) {
         return 0;
     }
@@ -8367,7 +8375,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
         if (ret64 != sample->pos) {
             av_log(mov->fc, AV_LOG_ERROR, "stream %d, offset 0x%"PRIx64": partial file, retry : %d\n",
                    sc->ffindex, sample->pos, mov->retry_eof);
-            if (should_retry(sc->pb, ret64, mov->retry_eof)) {
+            if (should_retry(sc->pb, ret64, mov->retry_eof, mov)) {
                 av_log(mov->fc, AV_LOG_DEBUG,"should retry");
                 mov_current_sample_dec(sc);
             }
@@ -8395,7 +8403,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
             ret = AVERROR_INVALIDDATA;
         }    
         if (ret < 0) {
-            if (should_retry(sc->pb, ret, mov->retry_eof)) {
+            if (should_retry(sc->pb, ret, mov->retry_eof, mov)) {
                 av_log(mov->fc, AV_LOG_DEBUG, "should retry");
                 mov_current_sample_dec(sc);
             }
@@ -9015,6 +9023,8 @@ static const AVOption mov_options[] = {
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "fix_fmp4_seek_stuck", "fix fmp4 seek stuck", OFFSET(fix_fmp4_seek_stuck),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "fix_retry_eof", "fix retry eof", OFFSET(fix_retry_eof),
+            AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "fix_fmp4_skip_sample", "fix fmp4 skip sample", OFFSET(fix_fmp4_skip_sample),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "check_pb_error", "check pb error", OFFSET(check_pb_error),

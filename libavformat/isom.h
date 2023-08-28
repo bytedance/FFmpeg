@@ -328,6 +328,7 @@ typedef struct MOVContext {
     int need_found_moof;
     int found_moof;
     int is_fmp4;
+    int fix_retry_eof;
     int enable_single_sidx_opt;
     int fix_fmp4_skip_sample;
     int check_pb_error;
