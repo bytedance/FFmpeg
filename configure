@@ -6546,6 +6546,7 @@ enabled openssl           && { check_pkg_config openssl openssl openssl/ssl.h OP
                                check_pkg_config openssl openssl openssl/ssl.h SSL_library_init ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lboringssl -lboringssl_asm -lcrcrypto -lc++ ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -framework boringssl -framework crypto -lc++ ||
+                               check_lib openssl openssl/ssl.h SSL_library_init -framework boringssl -lc++ ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lssl -lboringssl_asm -lcrypto -lc++ ||
                                check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lssl -lcrypto ||
                                check_lib openssl openssl/ssl.h SSL_library_init -lssl -lcrypto ||
