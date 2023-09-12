@@ -8379,7 +8379,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (mov->aax_mode)
         aax_filter(pkt->data, pkt->size, mov);
 
-    int64_t enable_decrypt = 1;
+    int enable_decrypt = 1;
     if (st->codecpar->codec_type != AVMEDIA_TYPE_UNKNOWN) {
         enable_decrypt = (mov->enable_decrypt >> (int)(st->codecpar->codec_type)) & 0x1;
     }
@@ -8872,7 +8872,7 @@ static const AVOption mov_options[] = {
     { "enable_drm", "Enable drm", OFFSET(enable_drm),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = FLAGS },
     { "enable_decrypt", "Enable decrypt", OFFSET(enable_decrypt),
-        AV_OPT_TYPE_INT64, { .i64 = 0xffffLL }, 0, 0xffffLL, .flags = FLAGS },
+        AV_OPT_TYPE_INT, { .i64 = 0xffffLL }, 0, 0xffffLL, .flags = FLAGS },
     { "drm_downgrade", "drm downgrade", OFFSET(drm_downgrade),
         AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { "drm_aptr", "Drm aptr", OFFSET(drm_aptr),
