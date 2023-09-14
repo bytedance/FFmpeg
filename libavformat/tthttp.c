@@ -1415,7 +1415,7 @@ static int process_line(URLContext *h, char *line, int line_count,
             }
         } else if (!av_strcasecmp(tag, "X-Loader-Type")) {
             av_log(h, AV_LOG_TRACE, "X-Loader-Type:%s\n", p);
-            tt_network_info_callback(s->tt_opaque, IsLoaderType, 0, p);
+            tt_network_info_callback(s->tt_opaque, IsLoaderType, (int64_t)s->user_flag, p);
         } else if (!av_strcasecmp(tag, "X-Conn-Info")) {
             av_log(h, AV_LOG_TRACE, "X-Conn-Info: %s\n", p);
             tt_network_info_callback(s->tt_opaque, IsConnectionInfo, (int64_t)s->user_flag, p);
