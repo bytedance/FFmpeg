@@ -4430,7 +4430,9 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_freep(&sc->keyframes);
     av_freep(&sc->stts_data);
     av_freep(&sc->stps_data);
-    av_freep(&sc->elst_data);
+    if (!c->fix_fmp4_skip_sample) {
+        av_freep(&sc->elst_data);
+    }
     av_freep(&sc->rap_group);
 
     return 0;
@@ -4855,12 +4857,14 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     int data_offset = 0;
     unsigned entries, first_sample_flags = frag->flags;
     int flags, distance, i;
-    int64_t prev_dts = AV_NOPTS_VALUE;
+    int64_t new_dts = AV_NOPTS_VALUE, prev_dts = AV_NOPTS_VALUE;
     int next_frag_index = -1, index_entry_pos;
     size_t requested_size;
     size_t old_ctts_allocated_size;
     AVIndexEntry *new_entries;
     MOVFragmentStreamInfo * frag_stream_info;
+    int64_t edit_list_media_time = 0;
+    int64_t edit_list_duration = 0;
 
     if (!frag->found_tfhd) {
         av_log(c->fc, AV_LOG_ERROR, "trun track id unknown, no tfhd was found\n");
@@ -4926,6 +4930,7 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             // FIXME: sidx earliest_presentation_time is *PTS*, s.b.
             // pts = frag_stream_info->sidx_pts;
             dts = frag_stream_info->sidx_pts - sc->time_offset;
+            new_dts = frag_stream_info->sidx_pts;
             av_log(c->fc, AV_LOG_DEBUG, "found sidx time %"PRId64
                     ", using it for pts\n", pts);
         } else if (frag_stream_info->tfdt_dts != AV_NOPTS_VALUE) {
@@ -5000,6 +5005,16 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (index_entry_pos > 0)
         prev_dts = st->index_entries[index_entry_pos-1].timestamp;
 
+    // TODO: support multi-elst case
+    if (sc->elst_data && sc->elst_count == 1) {
+        get_edit_list_entry(c,
+                            sc,
+                            0,
+                            &edit_list_media_time,
+                            &edit_list_duration,
+                            sc->time_scale);
+    }
+
     for (i = 0; i < entries && !pb->eof_reached; i++) {
         unsigned sample_size = frag->size;
         int sample_flags = i ? frag->flags : first_sample_flags;
@@ -5046,6 +5061,27 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         // decoding.
         if (prev_dts >= dts)
             index_entry_flags |= AVINDEX_DISCARD_FRAME;
+
+        if (c->fix_fmp4_skip_sample && new_dts != AV_NOPTS_VALUE) {
+            // TODO: check need new_dts >= (edit_list_duration +
+            // edit_list_media_time) or not
+            if (new_dts < edit_list_media_time) {
+                if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
+                    st->codecpar->codec_id != AV_CODEC_ID_VORBIS &&
+                    new_dts < edit_list_media_time &&
+                    new_dts + sample_duration > edit_list_media_time) {
+                    st->internal->skip_samples += (edit_list_media_time - new_dts);
+                } else {
+                    index_entry_flags |= AVINDEX_DISCARD_FRAME;
+                    if ((!c->enable_video_timestamp_monotonic ||
+                         st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) &&
+                        st->codecpar->codec_id != AV_CODEC_ID_VORBIS) {
+                        st->internal->skip_samples += sample_duration;
+                    }
+                }
+            }
+            new_dts += sample_duration;
+        }
 
         st->index_entries[index_entry_pos].pos = offset;
         st->index_entries[index_entry_pos].timestamp = dts;
@@ -8906,6 +8942,8 @@ static const AVOption mov_options[] = {
     { "enable_seek_interrupt", "enable seek interrupt", OFFSET(enable_seek_interrupt),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "fix_fmp4_seek_stuck", "fix fmp4 seek stuck", OFFSET(fix_fmp4_seek_stuck),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "fix_fmp4_skip_sample", "fix fmp4 skip sample", OFFSET(fix_fmp4_skip_sample),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
