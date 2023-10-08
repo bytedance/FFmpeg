@@ -5065,12 +5065,13 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (c->fix_fmp4_skip_sample && new_dts != AV_NOPTS_VALUE) {
             // TODO: check need new_dts >= (edit_list_duration +
             // edit_list_media_time) or not
-            if (new_dts < edit_list_media_time) {
+            if (new_dts + ctts_duration < edit_list_media_time) {
                 if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
                     st->codecpar->codec_id != AV_CODEC_ID_VORBIS &&
-                    new_dts < edit_list_media_time &&
-                    new_dts + sample_duration > edit_list_media_time) {
-                    st->internal->skip_samples += (edit_list_media_time - new_dts);
+                    new_dts + ctts_duration + sample_duration >
+                            edit_list_media_time) {
+                    st->internal->skip_samples +=
+                            (edit_list_media_time - new_dts - ctts_duration);
                 } else {
                     index_entry_flags |= AVINDEX_DISCARD_FRAME;
                     if ((!c->enable_video_timestamp_monotonic ||
