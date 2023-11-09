@@ -1386,6 +1386,7 @@ static int update_frag_index(MOVContext *c, int64_t offset)
         }
 
         frag_stream_info[i].id = c->fc->streams[i]->id;
+        frag_stream_info[i].stsd_id = 0;
         frag_stream_info[i].sidx_pts = AV_NOPTS_VALUE;
         frag_stream_info[i].tfdt_dts = AV_NOPTS_VALUE;
         frag_stream_info[i].next_trun_dts = AV_NOPTS_VALUE;
@@ -6904,8 +6905,7 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
     encrypted_index = current_index;
     encryption_index = NULL;
     if (frag_stream_info) {
-        // Note this only supports encryption info in the first sample descriptor.
-        if (mov->fragment.stsd_id == 1) {
+        if (frag_stream_info->stsd_id == 1) {
             if (frag_stream_info->encryption_index) {
                 encrypted_index = current_index - frag_stream_info->index_entry;
                 encryption_index = frag_stream_info->encryption_index;
