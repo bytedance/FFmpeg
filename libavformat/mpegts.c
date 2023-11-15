@@ -177,6 +177,7 @@ struct MpegTSContext {
 
     AVStream *epg_stream;
     AVBufferPool* pools[32];
+    int seek_to_key;
 };
 
 #define MPEGTS_OPTIONS \
@@ -198,6 +199,8 @@ static const AVOption options[] = {
      {.i64 = 0}, 0, 1, 0 },
     {"skip_clear", "skip clearing programs", offsetof(MpegTSContext, skip_clear), AV_OPT_TYPE_BOOL,
      {.i64 = 0}, 0, 1, 0 },
+    {"seek_to_key", "seek to key frame", offsetof(MpegTSContext, seek_to_key), AV_OPT_TYPE_BOOL,
+     {.i64 = 0}, 0, 1, 0 }, 
     { NULL },
 };
 
@@ -3301,6 +3304,10 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
     MpegTSContext *ts = s->priv_data;
     AVPacket *pkt;
     int64_t pos;
+    int is_video = 0;
+    int64_t last_dts = 0;
+    int64_t last_pos = 0;
+    int last_size = 0;
     int pos47 = ts->pos47_full % ts->raw_packet_size;
     pos = ((*ppos  + ts->raw_packet_size - 1 - pos47) / ts->raw_packet_size) * ts->raw_packet_size + pos47;
     ff_read_frame_flush(s);
@@ -3315,14 +3322,31 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
             av_packet_free(&pkt);
             return AV_NOPTS_VALUE;
         }
+        
+        if (ts->seek_to_key) {
+            is_video = (s->streams[pkt->stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) ? 1 : 0;
+            if (is_video) {
+                if ((pkt->dts == AV_NOPTS_VALUE) && (pkt->flags & AV_PKT_FLAG_KEY)) {
+                    pkt->dts = last_dts + pkt->duration;
+                    pkt->pos = last_pos + last_size;
+                }
+                last_dts = pkt->dts;
+                last_pos = pkt->pos;
+                last_size = pkt->size;
+            }
+        }
+        
         if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0) {
             ff_reduce_index(s, pkt->stream_index);
-            av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->dts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
+            av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->dts, 0, 0,
+                               ((!is_video) || (pkt->flags & AV_PKT_FLAG_KEY)) ? AVINDEX_KEYFRAME : 0);
             if (pkt->stream_index == stream_index && pkt->pos >= *ppos) {
-                int64_t dts = pkt->dts;
-                *ppos = pkt->pos;
-                av_packet_free(&pkt);
-                return dts;
+                if ((!is_video) || (!ts->seek_to_key) || (pkt->flags & AV_PKT_FLAG_KEY)) {
+                    int64_t dts = pkt->dts;
+                    *ppos = pkt->pos;
+                    av_packet_free(&pkt);
+                    return dts;
+                }
             }
         }
         pos = pkt->pos;

@@ -2340,7 +2340,13 @@ int64_t ff_gen_search(AVFormatContext *s, int stream_index, int64_t target_ts,
         start_pos = pos;
 
         // May pass pos_limit instead of -1.
+        if (flags & AVSEEK_FLAG_TS_SEEK_KEY) {
+            av_opt_set_int(s->priv_data, "seek_to_key", 1, 0);
+        }
         ts = ff_read_timestamp(s, stream_index, &pos, INT64_MAX, read_timestamp);
+        if (flags & AVSEEK_FLAG_TS_SEEK_KEY) {
+            av_opt_set_int(s->priv_data, "seek_to_key", 0, 0);
+        }
         if (pos == pos_max)
             no_change++;
         else
