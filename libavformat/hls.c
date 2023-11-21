@@ -273,6 +273,7 @@ typedef struct HLSContext {
     CryptoContext crypto_ctx;
     int hls_sub_demuxer_probe_type;
     int seg_max_retry;
+    int enable_seg_error;
 } HLSContext;
 
 static void free_segment_dynarray(struct segment **segments, int n_segments)
@@ -1751,9 +1752,12 @@ reload:
                    v->cur_seq_no,
                    v->index);
             if (segment_retries >= c->seg_max_retry) {
-                av_log(v->parent, AV_LOG_WARNING, "Segment %"PRId64" of playlist %d failed too many times, skipping\n",
-                       v->cur_seq_no,
-                       v->index);
+                av_log(v->parent, AV_LOG_WARNING, "Segment %"PRId64" of playlist %d failed %d times, ret %d, enable error %d\n",
+                       v->cur_seq_no, v->index, segment_retries, ret, c->enable_seg_error);
+
+                if(c->enable_seg_error) {
+                    return ret;
+                }
                 v->cur_seq_no++;
                 segment_retries = 0;
             } else {
@@ -2893,7 +2897,7 @@ restart:
                     return ret;
                 }
                 if (ret < 0) {
-                    if (!avio_feof(&pls->pb) && ret != AVERROR_EOF)
+                    if ((!avio_feof(&pls->pb) || (c->enable_seg_error && pls->pb.error < 0)) && ret != AVERROR_EOF)
                         return ret;
                     break;
                 } else {
@@ -3292,6 +3296,7 @@ static const AVOption hls_options[] = {
     { "cur_audio_infoid", "current audio info id", OFFSET(cur_audio_infoid), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS },
     { "abr", "get abr strategy", OFFSET(abr), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS },
     { "seg_max_retry", "Maximum number of times to reload a segment on error.", OFFSET(seg_max_retry), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
+    { "enable_seg_error", "Report error if a segment on error.", OFFSET(enable_seg_error), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS},
     {NULL}
 };
 
