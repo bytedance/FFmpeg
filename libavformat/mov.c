@@ -7877,6 +7877,8 @@ static int mov_read_header(AVFormatContext *s)
 {
     MOVContext *mov = s->priv_data;
     AVIOContext *pb = s->pb;
+    if (mov->check_pb_error && pb->error < 0)
+        return pb->error;
     uint8_t *val = NULL;
     int j, err;
     MOVAtom atom = { AV_RL32("root") };
@@ -8945,6 +8947,8 @@ static const AVOption mov_options[] = {
     { "fix_fmp4_seek_stuck", "fix fmp4 seek stuck", OFFSET(fix_fmp4_seek_stuck),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "fix_fmp4_skip_sample", "fix fmp4 skip sample", OFFSET(fix_fmp4_skip_sample),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "check_pb_error", "check pb error", OFFSET(check_pb_error),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
