@@ -4179,11 +4179,10 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
         }
     }
 
-    if (!mov->ignore_editlist && mov->advanced_editlist && (!(mov->fc->flags & AVFMT_FLAG_IGNORE_ELST))) {
+    if (!mov->ignore_editlist && mov->advanced_editlist) {
         // Fix index according to edit lists.
         mov_fix_index(mov, st);
     }
-    mov->fc->flags &= ~AVFMT_FLAG_IGNORE_ELST;
 
     // Update start time of the stream.
     if (st->start_time == AV_NOPTS_VALUE && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && st->nb_index_entries > 0) {
@@ -5457,10 +5456,10 @@ static int mov_read_elst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             return AVERROR_INVALIDDATA;
         }
 
-        if ((c->fc->flags & AVFMT_FLAG_ENABLE_CHECK_ELST) && (e->time >= 0 && e->duration <= 0)) {
+        if ((c->check_editlist == 1) && (e->time >= 0 && e->duration <= 0)) {
             av_log(c->fc, AV_LOG_ERROR, "Track %d, edit %d: Invalid edit list duration=%"PRId64"\n",
                    c->fc->nb_streams-1, i, e->duration);
-            c->fc->flags |= AVFMT_FLAG_IGNORE_ELST;
+            c->ignore_editlist = 1;
         }
     }
     sc->elst_count = i;
@@ -8878,6 +8877,8 @@ static const AVOption mov_options[] = {
     {"advanced_editlist",
         "Modify the AVIndex according to the editlists. Use this option to decode in the order specified by the edits.",
         OFFSET(advanced_editlist), AV_OPT_TYPE_BOOL, {.i64 = 1},
+        0, 1, FLAGS},
+    {"check_editlist", "check the edit list atom is valid.", OFFSET(check_editlist), AV_OPT_TYPE_BOOL, {.i64 = 0},
         0, 1, FLAGS},
     {"ignore_chapters", "", OFFSET(ignore_chapters), AV_OPT_TYPE_BOOL, {.i64 = 0},
         0, 1, FLAGS},

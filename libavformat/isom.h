@@ -270,6 +270,7 @@ typedef struct MOVContext {
     int use_absolute_path;
     int ignore_editlist;
     int advanced_editlist;
+    int check_editlist;
     int ignore_chapters;
     int seek_individually;
     int64_t next_root_atom; ///< offset of the next root atom
