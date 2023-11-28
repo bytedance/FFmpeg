@@ -2540,6 +2540,12 @@ static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
        the range header */
     av_dict_set_int(&c->avio_opts, "seekable", c->http_seekable, 0);
 
+    /* 
+    * clear verifyhost option for hls segment 
+    * fixbug: segment ssl shake error 
+    */
+    av_dict_set(&c->avio_opts, "verifyhost", NULL, 0);
+
     if (av_strstart(s->url, "mem://hls", NULL)) {
         if ((ret = parse_mem(s, s->url, s->pb)) < 0)
             goto fail;
