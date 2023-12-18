@@ -2667,6 +2667,7 @@ void avformat_close_input(AVFormatContext **s);
 #define AVSEEK_FLAG_ANY      4 ///< seek to any frame, even non-keyframes
 #define AVSEEK_FLAG_FRAME    8 ///< seeking based on frame number
 #define AVSEEK_FLAG_TS_SEEK_KEY 0x10 ///< ts seek to keyframe
+#define AVSEEK_FLAG_PRIVIATE1 0x20
 
 /**
  * @addtogroup lavf_encoding
