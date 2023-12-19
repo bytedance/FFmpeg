@@ -6752,7 +6752,7 @@ static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
 
     if (is_protected && c->enable_drm) {
-        c->drm_ctx = c->drm_aptr;
+        c->drm_ctx = (void*) c->drm_aptr;
     }
     return 0;
 }
