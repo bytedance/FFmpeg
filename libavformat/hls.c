@@ -3167,8 +3167,13 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
     int64_t first_timestamp, seek_timestamp, duration;
     int64_t seq_no;
 
-    if ((flags & AVSEEK_FLAG_BYTE) || (c->ctx->ctx_flags & AVFMTCTX_UNSEEKABLE))
+    if (flags & AVSEEK_FLAG_BYTE)
         return AVERROR(ENOSYS);
+
+    if (c->ctx->ctx_flags & AVFMTCTX_UNSEEKABLE) {
+        // not support seek, and return 0 to avoid report error
+        return 0;
+    }
 
     c->first_timestamp = s->start_time != AV_NOPTS_VALUE ? s->start_time : 0;
     first_timestamp = c->first_timestamp == AV_NOPTS_VALUE ?
