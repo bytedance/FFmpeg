@@ -2258,6 +2258,19 @@ static int open_demuxer_for_playlist(AVFormatContext *s, struct playlist *pls, i
     if (ret < 0)
         goto fail;
 
+    int64_t bitrate = 0;
+    int n_playlists = c->n_playlists;
+    if (n_playlists == 1) {
+        int64_t first_ts_filesize = pls->input ? avio_size(pls->input) : 0;
+        int64_t first_ts_duration = (pls->n_segments > 0 && pls->segments) ? pls->segments[0]->duration :0;
+        
+        if (first_ts_filesize > 0 && first_ts_duration > 0)
+            bitrate = first_ts_filesize * 8 * AV_TIME_BASE / first_ts_duration;
+    }
+    
+    //use the first ts's bitrae as the hls's bitrate
+    av_dict_set_int(&(s->metadata),"hls_first_ts_bitrate" , bitrate, 0);
+
     pls->has_noheader_flag = !!(pls->ctx->ctx_flags & AVFMTCTX_NOHEADER);
 
     /* Create new AVStreams for each stream in this playlist */
