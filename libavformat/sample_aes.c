@@ -196,8 +196,6 @@ static int decrypt_video_frame(enum AVCodecID codec_id, CryptoContext *crypto_ct
         ret = get_next_nal_unit(codec_id, &ctx, &nalu);
         if (ret < 0)
             return ret;
-        av_log(NULL, AV_LOG_DEBUG,"encrypt nalu_header:%d %d %d %d nalu_type:%d nalu_len:%d pkt_size:%d\n",
-        *(nalu.data-4),*(nalu.data-3),*(nalu.data-2),*(nalu.data-1),nalu.type,nalu.length,pkt->size);
         if (nalu_encrypted(codec_id, nalu)) {
             int encrypted_nalu_length = nalu.length;
             ret = decrypt_nal_unit(crypto_ctx, &nalu);
@@ -287,8 +285,6 @@ static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypt
         ret = get_flv_next_nal_unit(codec_id, &ctx, &nalu);
         if (ret < 0)
             return ret;
-        av_log(NULL, AV_LOG_DEBUG,"encrypt nalu_header:%d %d %d %d nalu_type:%d nalu_len:%d pkt_size:%d\n",
-        *(nalu.data-4),*(nalu.data-3),*(nalu.data-2),*(nalu.data-1),nalu.type,nalu.length,pkt->size);
         if (nalu_encrypted(codec_id, nalu)) {
             int encrypted_nalu_length = nalu.length;
             ret = decrypt_nal_unit(crypto_ctx, &nalu);
@@ -302,8 +298,6 @@ static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypt
                 *(nalu.data-i) = nalu.length >> (8*(i-1));
             memmove(data_ptr, nalu.data - nalu.start_code_length, nalu.start_code_length + nalu.length);
         }
-        av_log(NULL, AV_LOG_DEBUG,"decrypt nalu_header:%d %d %d %d nalu_type:%d nalu_len:%d pkt_size:%d\n",
-        *(data_ptr),*(data_ptr+1),*(data_ptr+2),*(data_ptr+3),nalu.type,nalu.length,pkt->size);
         data_ptr += nalu.start_code_length + nalu.length;
         nalu_start+=nalu.length+nalu.start_code_length+move_nalu;
     }
