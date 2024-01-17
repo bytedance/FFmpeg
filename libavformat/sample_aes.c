@@ -28,6 +28,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/aes.h"
+#include "libavutil/avstring.h"
 #include "libavcodec/hevc.h"
 #include "libavcodec/h264.h"
 #include "string.h"
@@ -267,6 +268,50 @@ static int get_flv_next_nal_unit(enum AVCodecID codec_id, CodecParserContext *ct
     return 0;
 }
 
+static int check_flv_video_frame(AVPacket *pkt) {
+    int ret = 0;
+    uint8_t *data_ptr = pkt->data;
+    uint8_t *data_end = pkt->data + pkt->size;
+    int nalu_count = 0;
+    char log_info[1024] = { 0 };
+    
+    av_strlcatf(log_info, sizeof(log_info), "packet data: %p size: %d\n", pkt->data, pkt->size);
+
+    while (data_ptr < data_end) {
+        int nalu_length = 0;
+        if (data_ptr + 3 >= data_end) {
+            av_log(NULL, AV_LOG_WARNING, "Remaining bytes: %ld less than 4\n", data_end - data_ptr);
+            break;
+        }
+        nalu_length = *data_ptr << 24 | *(data_ptr + 1) << 16 | *(data_ptr + 2) << 8 | *(data_ptr + 3);
+        if (data_ptr + 4 + nalu_length > data_end) {
+            av_log(NULL, AV_LOG_WARNING, "NALU data exceeds packet data boundary by %ld bytes\n", data_ptr + 4 + nalu_length - data_end);
+            break;
+        }
+        av_strlcatf(log_info, sizeof(log_info), "idx: %d data: %02x %02x %02x %02x len: %d\n",
+                    nalu_count, *data_ptr, *(data_ptr + 1), *(data_ptr + 2), *(data_ptr + 3), nalu_length);
+        data_ptr += 4 + nalu_length;
+        nalu_count++;
+    }
+    
+    ret = data_end - data_ptr;
+    if (ret > 0) {
+        av_strlcatf(log_info, sizeof(log_info), "remaining %d bytes: ", ret);
+        for (size_t i = 0; i < ret; i++) {
+            av_strlcatf(log_info, sizeof(log_info), "%02x ", *(data_ptr + i));
+        }
+        av_strlcatf(log_info, sizeof(log_info), "\n");
+    } else if (ret < 0) {
+        av_strlcatf(log_info, sizeof(log_info), "exceed %d bytes\n", -ret);
+    }
+    
+    if (ret != 0) {
+        av_log(NULL, AV_LOG_WARNING, "%s\n", log_info);
+    }
+    
+    return ret;
+}
+
 static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypto_ctx, AVPacket *pkt)
 {
     int ret = 0;
@@ -274,17 +319,34 @@ static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypt
     NALUnit nalu;
     uint8_t *data_ptr;
     int move_nalu = 0;
+    int nalu_count = 0;
+    int shrink_size = 0;
 
     memset(&ctx, 0, sizeof(ctx));
     ctx.buf_ptr  = pkt->data;
     ctx.buf_end  = pkt->data + pkt->size;
     data_ptr = pkt->data;
     uint8_t *nalu_start=pkt->data;
+    
+    if (check_flv_video_frame(pkt) != 0) {
+        av_log(NULL, AV_LOG_WARNING, "check_flv_video_frame failed\n");
+    }
+    
     while (nalu_start < ctx.buf_end) {
+        if (ctx.buf_ptr < pkt->data || ctx.buf_ptr + 4 >= ctx.buf_end) {
+            av_log(NULL, AV_LOG_ERROR, "CodecParserContext: %p invalid, ctx buf_ptr: %p buf_end: %p, pkt data: %p size: %d, read %d nalu\n",
+                   &ctx, ctx.buf_ptr, ctx.buf_end, pkt->data, pkt->size, nalu_count);
+            return AVERROR_INVALIDDATA;
+        }
         memset(&nalu, 0, sizeof(nalu));
         ret = get_flv_next_nal_unit(codec_id, &ctx, &nalu);
         if (ret < 0)
             return ret;
+        if (nalu.data + nalu.length > ctx.buf_end) {
+            av_log(NULL, AV_LOG_ERROR, "NALU: %p illegal, data: %p type: %d length: %d, pkt data: %p size: %d, read %d nalu\n",
+                   &nalu, nalu.data, nalu.type, nalu.length, pkt->data, pkt->size, nalu_count);
+            return AVERROR_INVALIDDATA;
+        }
         if (nalu_encrypted(codec_id, nalu)) {
             int encrypted_nalu_length = nalu.length;
             ret = decrypt_nal_unit(crypto_ctx, &nalu);
@@ -297,9 +359,15 @@ static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypt
             for (int i = nalu.start_code_length; i >0; i--)
                 *(nalu.data-i) = nalu.length >> (8*(i-1));
             memmove(data_ptr, nalu.data - nalu.start_code_length, nalu.start_code_length + nalu.length);
+            av_log(NULL, AV_LOG_INFO, "nalu index: %d, move_nalu: %d\n", nalu_count, move_nalu);
+            shrink_size += move_nalu;
         }
         data_ptr += nalu.start_code_length + nalu.length;
         nalu_start+=nalu.length+nalu.start_code_length+move_nalu;
+        nalu_count++;
+    }
+    if (shrink_size > 0) {
+        av_log(NULL, AV_LOG_INFO, "nalu_count total: %d, shrink size: %d\n", nalu_count, shrink_size);
     }
     av_shrink_packet(pkt, data_ptr - pkt->data);
     return 0;
