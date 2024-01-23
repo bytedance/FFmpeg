@@ -4357,7 +4357,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (sc->dref_id-1 < sc->drefs_count && sc->drefs[sc->dref_id-1].path) {
         MOVDref *dref = &sc->drefs[sc->dref_id - 1];
-        if (c->enable_drefs) {
+        if (c->enable_drefs && !c->enable_dynamic_pb) {
             if (mov_open_dref(c, &sc->pb, c->fc->url, dref) < 0)
                 av_log(c->fc, AV_LOG_ERROR,
                        "stream %d, error opening alias: path='%s', dir='%s', "
@@ -8272,6 +8272,12 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     mov->fc = s;
     int64_t end_off = 0;
     uint8_t *val = NULL;
+    if (mov->enable_dynamic_pb) {
+        for (int i = 0; i < s->nb_streams; i++) {
+            MOVStreamContext *msc = s->streams[i]->priv_data;
+            msc->pb = s->pb;
+        }
+    }
  retry:
     if (mov->enable_mp4_check) {
         test_sample = mov_find_next_sample2(s, &st, TEST_SAMPLE_MODE);
@@ -8957,6 +8963,8 @@ static const AVOption mov_options[] = {
     { "fix_fmp4_skip_sample", "fix fmp4 skip sample", OFFSET(fix_fmp4_skip_sample),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "check_pb_error", "check pb error", OFFSET(check_pb_error),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "enable_dynamic_pb", "enable dynamic pb", OFFSET(enable_dynamic_pb),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };

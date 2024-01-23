@@ -331,6 +331,7 @@ typedef struct MOVContext {
     int enable_single_sidx_opt;
     int fix_fmp4_skip_sample;
     int check_pb_error;
+    int enable_dynamic_pb;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
