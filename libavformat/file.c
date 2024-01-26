@@ -274,7 +274,14 @@ static int64_t file_seek(URLContext *h, int64_t pos, int whence)
     }
     if(whence == AVSEEK_ADDR || whence == AVSEEK_SETDUR)
         return -1;
-    ret = lseek(c->fd, pos + c->startOffset, whence);
+
+    int64_t targetPos = pos;
+    if(whence == SEEK_SET) {
+        // relative whence dont need add offset
+        targetPos = pos + c->startOffset;
+    }
+
+    ret = lseek(c->fd, targetPos, whence);
     if (whence == SEEK_SET && ret >= 0 && c->startOffset >= 0) {
         ret = c->readOffset = pos;
     }
