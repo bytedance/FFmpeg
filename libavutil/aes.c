@@ -317,7 +317,7 @@ int av_aes_gcm_256_decrypt(const unsigned char *ciphertext, int ciphertext_len,
     }
 
     unsigned int blocksize = EVP_CIPHER_CTX_block_size(ctx);
-    uint size = ciphertext_len + blocksize - 1;
+    unsigned int size = ciphertext_len + blocksize - 1;
 
     const int block_len = 16;
     if (size < block_len) {
