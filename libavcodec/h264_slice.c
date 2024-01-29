@@ -2645,17 +2645,20 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
 
             ret = ff_h264_decode_mb_cabac(h, sl);
 
-            if (ret >= 0)
-                ff_h264_hl_decode_mb(h, sl);
-
+            if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                if (ret >= 0)
+                    ff_h264_hl_decode_mb(h, sl);
+            }
             // FIXME optimal? or let mb_decode decode 16x32 ?
             if (ret >= 0 && FRAME_MBAFF(h)) {
                 sl->mb_y++;
 
                 ret = ff_h264_decode_mb_cabac(h, sl);
 
-                if (ret >= 0)
-                    ff_h264_hl_decode_mb(h, sl);
+                if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                    if (ret >= 0)
+                        ff_h264_hl_decode_mb(h, sl);
+                }
                 sl->mb_y--;
             }
             eos = get_cabac_terminate(&sl->cabac);
@@ -2664,8 +2667,10 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
                 sl->cabac.bytestream > sl->cabac.bytestream_end + 2) {
                 er_add_slice(sl, sl->resync_mb_x, sl->resync_mb_y, sl->mb_x - 1,
                              sl->mb_y, ER_MB_END);
-                if (sl->mb_x >= lf_x_start)
-                    loop_filter(h, sl, lf_x_start, sl->mb_x + 1);
+                if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                    if (sl->mb_x >= lf_x_start)
+                        loop_filter(h, sl, lf_x_start, sl->mb_x + 1);
+                }
                 goto finish;
             }
             if (sl->cabac.bytestream > sl->cabac.bytestream_end + 2 )
@@ -2681,15 +2686,17 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
             }
 
             if (++sl->mb_x >= h->mb_width) {
-                loop_filter(h, sl, lf_x_start, sl->mb_x);
-                sl->mb_x = lf_x_start = 0;
-                decode_finish_row(h, sl);
-                ++sl->mb_y;
-                if (FIELD_OR_MBAFF_PICTURE(h)) {
-                    ++sl->mb_y;
-                    if (FRAME_MBAFF(h) && sl->mb_y < h->mb_height)
-                        predict_field_decoding_flag(h, sl);
+                if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                    loop_filter(h, sl, lf_x_start, sl->mb_x);
                 }
+              sl->mb_x = lf_x_start = 0;
+              decode_finish_row(h, sl);
+              ++sl->mb_y;
+              if (FIELD_OR_MBAFF_PICTURE(h)) {
+                ++sl->mb_y;
+                if (FRAME_MBAFF(h) && sl->mb_y < h->mb_height)
+                  predict_field_decoding_flag(h, sl);
+              }
             }
 
             if (eos || sl->mb_y >= h->mb_height) {
@@ -2698,7 +2705,9 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
                 er_add_slice(sl, sl->resync_mb_x, sl->resync_mb_y, sl->mb_x - 1,
                              sl->mb_y, ER_MB_END);
                 if (sl->mb_x > lf_x_start)
-                    loop_filter(h, sl, lf_x_start, sl->mb_x);
+                    if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                        loop_filter(h, sl, lf_x_start, sl->mb_x);
+                    }
                 goto finish;
             }
         }
@@ -2716,16 +2725,20 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
 
             ret = ff_h264_decode_mb_cavlc(h, sl);
 
-            if (ret >= 0)
-                ff_h264_hl_decode_mb(h, sl);
+            if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                if (ret >= 0)
+                    ff_h264_hl_decode_mb(h, sl);
+            }
 
             // FIXME optimal? or let mb_decode decode 16x32 ?
             if (ret >= 0 && FRAME_MBAFF(h)) {
                 sl->mb_y++;
                 ret = ff_h264_decode_mb_cavlc(h, sl);
 
-                if (ret >= 0)
-                    ff_h264_hl_decode_mb(h, sl);
+                if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                    if (ret >= 0)
+                        ff_h264_hl_decode_mb(h, sl);
+                }
                 sl->mb_y--;
             }
 
@@ -2738,7 +2751,9 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
             }
 
             if (++sl->mb_x >= h->mb_width) {
-                loop_filter(h, sl, lf_x_start, sl->mb_x);
+                if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                    loop_filter(h, sl, lf_x_start, sl->mb_x);
+                }
                 sl->mb_x = lf_x_start = 0;
                 decode_finish_row(h, sl);
                 ++sl->mb_y;
@@ -2774,7 +2789,9 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
                     er_add_slice(sl, sl->resync_mb_x, sl->resync_mb_y,
                                  sl->mb_x - 1, sl->mb_y, ER_MB_END);
                     if (sl->mb_x > lf_x_start)
-                        loop_filter(h, sl, lf_x_start, sl->mb_x);
+                        if (avctx->flags2 != AV_CODEC_FLAG2_ONLY_MVS) {
+                            loop_filter(h, sl, lf_x_start, sl->mb_x);
+                        }
 
                     goto finish;
                 } else {

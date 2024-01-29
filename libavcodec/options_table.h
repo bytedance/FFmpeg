@@ -77,6 +77,7 @@ static const AVOption avcodec_options[] = {
 {"chunks", "Frame data might be split into multiple chunks", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_CHUNKS }, INT_MIN, INT_MAX, V|D, "flags2"},
 {"showall", "Show all frames before the first keyframe", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_SHOW_ALL }, INT_MIN, INT_MAX, V|D, "flags2"},
 {"export_mvs", "export motion vectors through frame side data", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_EXPORT_MVS}, INT_MIN, INT_MAX, V|D, "flags2"},
+{"only_mvs", "when we are only interested in the mvs not the decoded picture", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_ONLY_MVS}, INT_MIN, INT_MAX, V|D, "flags2"},
 {"skip_manual", "do not skip samples and export skip information as frame side data", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_SKIP_MANUAL}, INT_MIN, INT_MAX, A|D, "flags2"},
 {"ass_ro_flush_noop", "do not reset ASS ReadOrder field on flush", 0, AV_OPT_TYPE_CONST, {.i64 = AV_CODEC_FLAG2_RO_FLUSH_NOOP}, INT_MIN, INT_MAX, S|D, "flags2"},
 {"export_side_data", "Export metadata as side data", OFFSET(export_side_data), AV_OPT_TYPE_FLAGS, {.i64 = DEFAULT}, 0, UINT_MAX, A|V|S|D|E, "export_side_data"},

@@ -375,6 +375,11 @@ typedef struct RcOverride{
  */
 #define AV_CODEC_FLAG2_SHOW_ALL       (1 << 22)
 /**
+ * Export motion vectors through frame side data while partially
+ * decoding input video
+ */
+#define AV_CODEC_FLAG2_ONLY_MVS     (1 << 27)
+/**
  * Export motion vectors through frame side data
  */
 #define AV_CODEC_FLAG2_EXPORT_MVS     (1 << 28)
