@@ -174,7 +174,7 @@ static int adts_aac_accurate_read_header(AVFormatContext *s, AVStream *st, AVDic
         int64_t num_frames = 0;
 
         while (offset < stream_size) {
-            if ((frame_size = get_adts_aac_frame_size(s, first_frame_pos + offset)) == 0) {
+            if ((frame_size = get_adts_aac_frame_size(s, first_frame_pos + offset)) <= 0) {
                 break;
             }
             offset += frame_size;
