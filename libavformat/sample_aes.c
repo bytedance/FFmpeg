@@ -259,6 +259,10 @@ static int get_flv_next_nal_unit(enum AVCodecID codec_id, CodecParserContext *ct
     nalu->start_code_length = 4;
     nalu->data = (uint8_t *)ctx->buf_ptr + nalu->start_code_length;
     nalu->length=*(nalu->data-1) | *(nalu->data-2)<<8 | *(nalu->data-3)<<16 | *(nalu->data-4)<<24;
+    if (nalu->length <= 0) {
+        av_log(NULL, AV_LOG_ERROR, "invalid NALU length, value is %d\n", nalu->length);
+        return AVERROR_INVALIDDATA;
+    }
     if (codec_id==AV_CODEC_ID_H264){
         nalu->type = *nalu->data & 0x1F;
     }else if (codec_id==AV_CODEC_ID_H265){
@@ -270,14 +274,15 @@ static int get_flv_next_nal_unit(enum AVCodecID codec_id, CodecParserContext *ct
 
 static int check_flv_video_frame(AVPacket *pkt) {
     int ret = 0;
-    uint8_t *data_ptr = pkt->data;
+    uint8_t *data_begin = pkt->data;
     uint8_t *data_end = pkt->data + pkt->size;
+    uint8_t *data_ptr = data_begin;
     int nalu_count = 0;
     char log_info[1024] = { 0 };
     
     av_strlcatf(log_info, sizeof(log_info), "packet data: %p size: %d\n", pkt->data, pkt->size);
 
-    while (data_ptr < data_end) {
+    while (data_ptr >= data_begin && data_ptr < data_end) {
         int nalu_length = 0;
         if (data_ptr + 3 >= data_end) {
             av_log(NULL, AV_LOG_WARNING, "Remaining bytes: %ld less than 4\n", data_end - data_ptr);
@@ -295,7 +300,10 @@ static int check_flv_video_frame(AVPacket *pkt) {
     }
     
     ret = data_end - data_ptr;
-    if (ret > 0) {
+    if (data_ptr < data_begin || data_ptr >= data_end) {
+        av_strlcatf(log_info, sizeof(log_info), "illegal NALU length makes data_ptr bad access, data_begin: %p, data_end: %p, data_ptr: %p", 
+                    data_begin, data_end, data_ptr);
+    } else if (ret > 0) {
         av_strlcatf(log_info, sizeof(log_info), "remaining %d bytes: ", ret);
         for (size_t i = 0; i < ret; i++) {
             av_strlcatf(log_info, sizeof(log_info), "%02x ", *(data_ptr + i));
@@ -330,6 +338,7 @@ static int decrypt_flv_video_frame(enum AVCodecID codec_id, CryptoContext *crypt
     
     if (check_flv_video_frame(pkt) != 0) {
         av_log(NULL, AV_LOG_WARNING, "check_flv_video_frame failed\n");
+        return AVERROR_INVALIDDATA;
     }
     
     while (nalu_start < ctx.buf_end) {
