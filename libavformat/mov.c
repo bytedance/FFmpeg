@@ -7350,7 +7350,23 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 c->atom_depth --;
                 return 0;
             }
-            if (c->found_moov && (c->found_mdat || (c->ignore_mdat && c->frag_index.complete && (!c->need_found_moof || c->found_moof))) &&
+
+            int all_fragments_parsed = 1;
+            if (c->parse_all_fragments) {
+                for (i = 0; i < c->fc->nb_streams; i++) {
+                    AVStream *st = c->fc->streams[i];
+                    MOVStreamContext *sc = st->priv_data;
+                    if (sc->has_sidx) {
+                        if (c->frag_index.current < c->frag_index.nb_items) {
+                            all_fragments_parsed = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (all_fragments_parsed && c->found_moov &&
+            (c->found_mdat || (c->ignore_mdat && c->frag_index.complete && (!c->need_found_moof || c->found_moof))) &&
                 a.size <= INT64_MAX - start_pos &&
                 ((!(pb->seekable & AVIO_SEEKABLE_NORMAL) || c->fc->flags & AVFMT_FLAG_IGNIDX || c->frag_index.complete) ||
                  start_pos + a.size == avio_size(pb))) {
@@ -8966,6 +8982,8 @@ static const AVOption mov_options[] = {
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "enable_dynamic_pb", "enable dynamic pb", OFFSET(enable_dynamic_pb),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "parse_all_fragments", "parse all fragments", OFFSET(parse_all_fragments),
+            AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
 
