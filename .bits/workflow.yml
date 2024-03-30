@@ -1,6 +1,19 @@
 type: pipeline
 
 jobs:
+
+  commit_msg_check:
+    type: service
+    service_name: template
+    display_name: Commit Message Check
+    failed_approvers:
+      - baishuai
+      - lifujun.hogan
+      - wangxuwang
+    settings:
+      template_config_id: 12508
+      SCRIPT_PATH: .bits/commit_msg_check.sh
+
   linux_x86_fate:
     type: service
     service_name: template
