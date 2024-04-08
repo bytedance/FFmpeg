@@ -2546,6 +2546,13 @@ static int hls_read_header2(AVFormatContext *s, AVDictionary **options)
     */
     av_dict_set(&c->avio_opts, "verifyhost", NULL, 0);
 
+    /*
+     * Clear decryption_key option. When play AES encrypted HLS,
+     * crypto will treat it as hexadecimal string, leading
+     * BLOCK_SIZE check fail.
+     */
+    av_dict_set(&c->avio_opts, "decryption_key", NULL, 0);
+
     if (av_strstart(s->url, "mem://hls", NULL)) {
         if ((ret = parse_mem(s, s->url, s->pb)) < 0)
             goto fail;
