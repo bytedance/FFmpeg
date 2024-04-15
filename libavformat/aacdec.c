@@ -166,6 +166,7 @@ static int adts_aac_accurate_read_header(AVFormatContext *s, AVStream *st, AVDic
             break;
         }
         st->codecpar->channels = channel;
+        st->codecpar->frame_size = 1024;
 
         avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
 
