@@ -93,7 +93,7 @@ ffmpeg_dash_export int64_t find_nearest_fragment(struct representation *pls, int
 ffmpeg_dash_export struct fragment* getFragment(struct representation *pls, struct fragment *seg, const DASHContext *dash_ctx);
 
 ffmpeg_dash_export void ff_cmaf_fill_tmpl_params(char *dst, size_t buffer_size,
-                              const char *template, int rep_id,
+                              const char *url_template, int rep_id,
                               int number, int bit_rate,
                               int64_t time);
 

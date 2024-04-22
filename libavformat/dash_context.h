@@ -43,7 +43,6 @@
 #if CONFIG_DRM
 #include "libavutil/drm.h"
 #endif
-#include <stdatomic.h>
 
 #define MAX_URL_SIZE 8192
 
