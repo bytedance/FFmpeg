@@ -883,8 +883,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
             av_log(s, AV_LOG_WARNING, ".\n");
         }
 
-        av_assert0(pkt->stream_index < (unsigned)s->nb_streams &&
-                   "Invalid stream index.\n");
+        if (pkt->stream_index >= (unsigned)s->nb_streams) {
+            av_log(s, AV_LOG_ERROR, "Invalid stream index %d\n", pkt->stream_index);
+            continue;
+        }
 
         st = s->streams[pkt->stream_index];
 
