@@ -2819,7 +2819,9 @@ static int read_stream_packets(AVFormatContext *s,int index,AVPacket **pkt,int64
         packet = packets[c->packets_pos[index]];
         int64_t pkt_pts = packet->pts;
         AVStream *stream = s->streams[packet->stream_index];
-        time = av_rescale_rnd(pkt_pts, AV_TIME_BASE, stream->time_base.den, AV_ROUND_DOWN);
+        if (stream != NULL) {
+            time = av_rescale_rnd(pkt_pts, AV_TIME_BASE, stream->time_base.den, AV_ROUND_DOWN);
+        }
     }
     if (pkt_time != NULL) {
         *pkt_time = time;
@@ -3022,7 +3024,9 @@ restart:
                 if (stream_type == AVMEDIA_TYPE_VIDEO && (pls->pkt->flags & AV_PKT_FLAG_KEY || c->n_packets[AVMEDIA_TYPE_VIDEO] > 0)) {
                     if (pls->pkt->flags & AV_PKT_FLAG_KEY) {
                         AVStream *vStream = s->streams[pls->pkt->stream_index];
-                        c->video_keyframe_time = av_rescale_rnd(pls->pkt->pts, AV_TIME_BASE, vStream->time_base.den, AV_ROUND_DOWN);
+                        if (vStream != NULL) {
+                            c->video_keyframe_time = av_rescale_rnd(pls->pkt->pts, AV_TIME_BASE, vStream->time_base.den, AV_ROUND_DOWN);
+                        }
                     }
                     if (pls->pkt->stream_index < pls->n_main_streams) {
                         pls->pkt->stream_index = pls->main_streams[pls->pkt->stream_index]->index;
