@@ -184,4 +184,11 @@ int tt_check_interrupt(AVIOInterruptCB *cb);
 
 void tt_free_stream(AVFormatContext *s, AVStream *st);
 
+int tt_index_search_timestamp(const AVIndexEntry *entries, int nb_entries, int64_t wanted_timestamp, int flags);
+
+int tt_add_index_entry(AVIndexEntry **index_entries,
+                       int *nb_index_entries,
+                       unsigned int *index_entries_allocated_size,
+                       int64_t pos, int64_t timestamp, int size, int distance, int flags);
+
 #endif /* AVFORMAT_TTEXPORT_H */
