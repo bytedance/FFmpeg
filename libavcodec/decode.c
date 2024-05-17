@@ -2048,7 +2048,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
         && avctx->codec_descriptor->type == AVMEDIA_TYPE_VIDEO)
         av_log(avctx, AV_LOG_WARNING,
                "gray decoding requested but not enabled at configuration time\n");
-    if (avctx->flags2 & AV_CODEC_FLAG2_EXPORT_MVS) {
+    if ((avctx->flags2 & AV_CODEC_FLAG2_EXPORT_MVS)
+	|| (avctx->flags2 & AV_CODEC_FLAG2_ONLY_MVS)) {
         avctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
     }
 
