@@ -308,11 +308,6 @@ int  tt_H264POCContext_get_int_field(H264POCContext *context, int field) {
     }
 }
 
-int tt_h2645_extract_rbsp(const uint8_t *src, int length,
-                          H2645NAL *nal, int small_padding) {
-    return ff_h2645_extract_rbsp(src, length, nal, small_padding);
-}
-
 int tt_h264_decode_extradata(const uint8_t *data, int size, H264ParamSets *ps,
                              int *is_avc, int *nal_length_size,
                              int err_recognition, void *logctx) {

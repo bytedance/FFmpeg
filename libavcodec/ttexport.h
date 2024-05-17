@@ -1,6 +1,6 @@
 /*
  * Export private or deprecated symbols
- * 
+ *
  * Copyright 2022 Bytedance Inc.
  * SPDX license identifier: LGPL-2.1-or-later
  *
@@ -29,7 +29,7 @@
 
 /**
  * A custom AVCodec register for private codec implementation
- * 
+ *
  * @param codec  pointer to AVCodec, only support a samll set of codecs.
  * @param codec_size additional abi check, must be same as sizeof(AVCodec)
  * @return int Return 0 for success, others failed.
@@ -125,10 +125,6 @@ int  tt_H264POCContext_get_int_field(H264POCContext *context, int field);
 /**
  * Extract the raw (unescaped) bitstream.
  */
-int tt_h2645_extract_rbsp(const uint8_t *src, int length,
-                          struct H2645NAL *nal, int small_padding);
-
-
 int tt_h264_decode_extradata(const uint8_t *data, int size, H264ParamSets *ps,
                              int *is_avc, int *nal_length_size,
                              int err_recognition, void *logctx);
