@@ -1198,3 +1198,12 @@ int ff_int_from_list_or_default(void *ctx, const char * val_name, int val,
            "%s %d are not supported. Set to default value : %d\n", val_name, val, default_value);
     return default_value;
 }
+
+static AVDemuxMemCB* s_global_mem_cb = NULL;
+void av_set_demux_mem_cb(AVDemuxMemCB* cb) {
+    s_global_mem_cb = cb;
+}
+
+AVDemuxMemCB* av_get_demux_mem_cb(void) {
+    return s_global_mem_cb;
+}

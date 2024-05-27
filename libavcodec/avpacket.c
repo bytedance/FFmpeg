@@ -122,6 +122,7 @@ void av_shrink_packet(AVPacket *pkt, int size)
 int av_grow_packet(AVPacket *pkt, int grow_by)
 {
     int new_size;
+    int ret;
     av_assert0((unsigned)pkt->size <= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE);
     if ((unsigned)grow_by >
         INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE))
@@ -142,7 +143,11 @@ int av_grow_packet(AVPacket *pkt, int grow_by)
 
         if (new_size + data_offset > pkt->buf->size ||
             !av_buffer_is_writable(pkt->buf)) {
-            int ret = av_buffer_realloc(&pkt->buf, new_size + data_offset);
+            if (av_get_demux_mem_cb() != NULL) {
+                ret = av_buffer_realloc_with_cb(&pkt->buf, new_size + data_offset, av_get_demux_mem_cb());
+            } else {
+                ret = av_buffer_realloc(&pkt->buf, new_size + data_offset);
+            }
             if (ret < 0) {
                 pkt->data = old_data;
                 return ret;
@@ -150,7 +155,11 @@ int av_grow_packet(AVPacket *pkt, int grow_by)
             pkt->data = pkt->buf->data + data_offset;
         }
     } else {
-        pkt->buf = av_buffer_alloc(new_size);
+        if (av_get_demux_mem_cb() != NULL) {
+            pkt->buf = av_buffer_alloc_with_cb(new_size, av_get_demux_mem_cb());
+        } else {
+            pkt->buf = av_buffer_alloc(new_size);
+        }
         if (!pkt->buf)
             return AVERROR(ENOMEM);
         if (pkt->size > 0)

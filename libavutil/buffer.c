@@ -59,6 +59,14 @@ AVBufferRef *av_buffer_create(uint8_t *data, buffer_size_t size,
     return ref;
 }
 
+void av_buffer_mem_cb_free(void *opaque, uint8_t *data)
+{
+    AVDemuxMemCB* cb = (AVDemuxMemCB*)opaque;
+    if (!cb)
+        return;
+    cb->free_callback(cb->opaque, data);
+}
+
 void av_buffer_default_free(void *opaque, uint8_t *data)
 {
     av_free(data);
@@ -74,6 +82,25 @@ AVBufferRef *av_buffer_alloc(buffer_size_t size)
         return NULL;
 
     ret = av_buffer_create(data, size, av_buffer_default_free, NULL, 0);
+    if (!ret)
+        av_freep(&data);
+
+    return ret;
+}
+
+AVBufferRef *av_buffer_alloc_with_cb(int size, AVDemuxMemCB* cb)
+{
+    if (cb == NULL)
+        return NULL;
+    
+    AVBufferRef *ret = NULL;
+    uint8_t    *data = NULL;
+
+    data = cb->alloc_callback(cb->opaque, size);
+    if (!data)
+        return NULL;
+
+    ret = av_buffer_create(data, size, av_buffer_mem_cb_free, cb, 0);
     if (!ret)
         av_freep(&data);
 
@@ -239,6 +266,22 @@ int av_buffer_replace(AVBufferRef **pdst, AVBufferRef *src)
 
     av_buffer_unref(pdst);
     *pdst = tmp;
+    return 0;
+}
+
+int av_buffer_realloc_with_cb(AVBufferRef **pbuf, int size, AVDemuxMemCB* cb)
+{
+    if (cb == NULL)
+        return 0;
+    AVBufferRef *buf = *pbuf;
+    uint8_t *tmp;
+
+    tmp = cb->realloc_callback(cb->opaque, buf->data, size);
+    if (!tmp)
+        return AVERROR(ENOMEM);
+
+    buf->buffer->data = buf->data = tmp;
+    buf->buffer->size = buf->size = size;
     return 0;
 }
 

@@ -346,6 +346,17 @@ AVBufferRef *av_buffer_pool_get(AVBufferPool *pool);
  */
 void *av_buffer_pool_buffer_get_opaque(AVBufferRef *ref);
 
+typedef struct AVDemuxMemCB {
+    void* (*realloc_callback)(void*, void*, int);
+    void* (*alloc_callback)(void*, int);
+    void (*free_callback)(void*, void*);
+    void *opaque;
+} AVDemuxMemCB;
+
+AVBufferRef * av_buffer_alloc_with_cb(int size, AVDemuxMemCB* cb);
+int av_buffer_realloc_with_cb(AVBufferRef **buf, int size, AVDemuxMemCB* cb);
+void av_buffer_mem_cb_free(void *opaque, uint8_t *data);
+
 /**
  * @}
  */

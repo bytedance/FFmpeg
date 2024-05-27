@@ -4314,6 +4314,10 @@ int avcodec_is_open(AVCodecContext *s);
  */
 AVCPBProperties *av_cpb_properties_alloc(size_t *size);
 
+void av_set_demux_mem_cb(AVDemuxMemCB* cb);
+
+AVDemuxMemCB* av_get_demux_mem_cb(void);
+
 /**
  * @}
  */
