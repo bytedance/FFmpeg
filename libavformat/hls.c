@@ -441,6 +441,7 @@ struct key_info {
      char method[11];
      char iv[35];
      char cid[CONTENT_ID_LEN];
+     char key_format[MAX_URL_SIZE];
 };
 
 static void handle_key_args(struct key_info *info, const char *key,
@@ -455,6 +456,12 @@ static void handle_key_args(struct key_info *info, const char *key,
     } else if (!strncmp(key, "IV=", key_len)) {
         *dest     =        info->iv;
         *dest_len = sizeof(info->iv);
+    } else if(!strncmp(key, "CID=", key_len)) {
+        *dest     =        info->cid;
+        *dest_len = sizeof(info->cid);
+    } else if(!strncmp(key, "KEYFORMAT=", key_len)) {
+        *dest     =        info->key_format;
+        *dest_len = sizeof(info->key_format);
     }
 }
 
@@ -843,6 +850,7 @@ static int parse_playlist(HLSContext *c, const char *url,
     enum KeyType key_type = KEY_NONE;
     uint8_t iv[16] = "";
     int has_iv = 0;
+    int key_format_is_identity = 0;
     char key[MAX_URL_SIZE] = "";
     char line[MAX_URL_SIZE];
     const char *ptr;
@@ -946,6 +954,10 @@ static int parse_playlist(HLSContext *c, const char *url,
             }
             av_strlcpy(key, info.uri, sizeof(key));
 
+            key_format_is_identity = 0;
+            if (info.key_format[0] == 0 ||  !strcmp(info.key_format, "identity")) {
+                key_format_is_identity = 1;
+            }
             if(!strncmp(info.uri, "urn:marlin-drm", 14)) {
                 c->drm_ctx = (void *)c->drm_aptr;
                 if(c->drm_ctx && (av_drm_open(c->drm_ctx, info.cid /*info.cid*/) != 0)) {
@@ -1090,13 +1102,17 @@ static int parse_playlist(HLSContext *c, const char *url,
                 is_discontinuety = 0;
 
                 if (key_type != KEY_NONE) {
-                    ff_make_absolute_url(tmp_str, sizeof(tmp_str), url, key);
-                    if (!tmp_str[0]) {
-                        ret = AVERROR_INVALIDDATA;
-                        av_free(seg);
-                        goto fail;
+                    if (key_format_is_identity && av_strstart(key, "data:", NULL)) {
+                        seg->key = av_strdup(key);
+                    } else {
+                        ff_make_absolute_url(tmp_str, sizeof(tmp_str), url, key);
+                        if (!tmp_str[0]) {
+                            ret = AVERROR_INVALIDDATA;
+                            av_free(seg);
+                            goto fail;
+                        }
+                        seg->key = av_strdup(tmp_str);
                     }
-                    seg->key = av_strdup(tmp_str);
                     if (!seg->key) {
                         av_free(seg);
                         ret = AVERROR(ENOMEM);
