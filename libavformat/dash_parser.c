@@ -1536,7 +1536,7 @@ int reopen_demux_for_representation(AVFormatContext *s, DASHContext *dash_ctx, s
         }
         goto fail;
     }
-    if (pls->n_fragments || (!dash_ctx->skip_find_audio_stream_info && pls->type == AVMEDIA_TYPE_AUDIO && pls->down_segment_count == 1)) {
+    if (pls->n_fragments || (!dash_ctx->skip_find_audio_stream_info && pls->down_segment_count == 1)) {
         for (i = 0; i < pls->ctx->nb_streams; i++) {
             pls->ctx->streams[i]->r_frame_rate = pls->framerate.den ? pls->framerate : pls->ctx->streams[i]->avg_frame_rate;
         }
@@ -1552,7 +1552,7 @@ int reopen_demux_for_representation(AVFormatContext *s, DASHContext *dash_ctx, s
     pls->pb.seekable = dash_ctx->is_live ? 0 : 1;
 
     fail:
-    av_log(s, AV_LOG_INFO, "reopen_demux_for_component type=%d, buffer_size=%d, ret=0x%x\n", pls->type, buffer_size, ret);
+    av_log(s, AV_LOG_INFO, "reopen_demux_for_component type=%d, buffer_size=%d, ret=0x%x start_time %" PRId64 "\n", pls->type, buffer_size, ret, pls->ctx->start_time);
     return ret;
 }
 
