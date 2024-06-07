@@ -1552,7 +1552,7 @@ int reopen_demux_for_representation(AVFormatContext *s, DASHContext *dash_ctx, s
     pls->pb.seekable = dash_ctx->is_live ? 0 : 1;
 
     fail:
-    av_log(s, AV_LOG_INFO, "reopen_demux_for_component type=%d, buffer_size=%d, ret=0x%x start_time %" PRId64 "\n", pls->type, buffer_size, ret, pls->ctx->start_time);
+    av_log(s, AV_LOG_INFO, "reopen_demux_for_component type=%d, buffer_size=%d, ret=0x%x\n", pls->type, buffer_size, ret);
     return ret;
 }
 
