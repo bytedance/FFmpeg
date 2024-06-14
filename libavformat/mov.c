@@ -1996,6 +1996,33 @@ static int mov_read_glbl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             return mov_read_default(c, pb, atom);
     }
     if (st->codecpar->extradata_size > 1 && st->codecpar->extradata) {
+        if(atom.type == MKTAG('l','h','v','C')){
+	    uint8_t hvcC_header[4] = {0x68,0x76,0x63,0x43};
+	    uint8_t lhvC_header[4] = {0x6C,0x68,0x76,0x43};
+            int hvcC_size = st->codecpar->extradata_size;
+            uint8_t *hvcC;
+            hvcC = av_malloc(hvcC_size);
+            if(hvcC){
+                memcpy(hvcC, st->codecpar->extradata, hvcC_size);
+                av_freep(&st->codecpar->extradata);
+
+                st->codecpar->extradata_size += 8;
+                st->codecpar->extradata_size += atom.size;
+
+                st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+                if (!st->codecpar->extradata)
+                    return AVERROR(ENOMEM);
+
+		        memcpy(st->codecpar->extradata, hvcC_header, 4);
+                memcpy(st->codecpar->extradata + 4, hvcC, hvcC_size);
+                memcpy(st->codecpar->extradata + 4 + hvcC_size, lhvC_header, 4);
+
+                int ret = ffio_read_size(pb, st->codecpar->extradata+hvcC_size + 8, atom.size);
+                av_free(hvcC);
+            }
+            return 0;
+        }
+
         av_log(c->fc, AV_LOG_WARNING, "ignoring multiple glbl\n");
         return 0;
     }
@@ -2425,6 +2452,17 @@ FF_ENABLE_DEPRECATION_WARNINGS
                                     AV_DICT_DONT_STRDUP_VAL);
                     }
                 }
+            }
+        }
+    } else if(st->codecpar->codec_tag == MKTAG('m','e','t','t')){
+        if(size < 20)
+            avio_skip(pb, size);
+        else{
+            char mime[20];
+            size -= avio_get_str(pb, size, mime, 20);
+            avio_skip(pb, size);
+            if(strstr(mime,"disparity") != NULL){
+                st->codecpar->codec_id = AV_CODEC_ID_METT_DISPARITY;
             }
         }
     } else {
@@ -7140,6 +7178,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('a','d','r','m'), mov_read_adrm },
 { MKTAG('f','t','y','p'), mov_read_ftyp },
 { MKTAG('g','l','b','l'), mov_read_glbl },
+{ MKTAG('l','h','v','C'), mov_read_glbl },
 { MKTAG('h','d','l','r'), mov_read_hdlr },
 { MKTAG('i','l','s','t'), mov_read_ilst },
 { MKTAG('j','p','2','h'), mov_read_jp2h },
