@@ -21,23 +21,23 @@ jobs:
     settings:
       template_config_id: 24845
 
-  macOS_x86_fate:
-    type: service
-    service_name: template
-    display_name: macOS x86 fate
-    settings:
-      template_config_id: 24846
+  # macOS_x86_fate:
+  #   type: service
+  #   service_name: template
+  #   display_name: macOS x86 fate
+  #   settings:
+  #     template_config_id: 24846
 
-  linux_x86_fate_rsync:
-    type: service
-    service_name: template
-    display_name: linux x86 fate rsync
-    settings:
-      template_config_id: 24883
+  # linux_x86_fate_rsync:
+  #   type: service
+  #   service_name: template
+  #   display_name: linux x86 fate rsync
+  #   settings:
+  #     template_config_id: 24883
 
-  macOS_x86_fate_rsync:
-    type: service
-    service_name: template
-    display_name: macOS x86 fate rsync
-    settings:
-      template_config_id: 24882
+  # macOS_x86_fate_rsync:
+  #   type: service
+  #   service_name: template
+  #   display_name: macOS x86 fate rsync
+  #   settings:
+  #     template_config_id: 24882
