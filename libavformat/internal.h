@@ -27,7 +27,7 @@
 #include "avformat.h"
 #include "os_support.h"
 
-#define MAX_URL_SIZE 4096
+#define MAX_URL_SIZE 8192
 
 /** size of probe buffer, for guessing file type from file contents */
 #define PROBE_BUF_MIN 2048
