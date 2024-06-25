@@ -1997,8 +1997,8 @@ static int mov_read_glbl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
     if (st->codecpar->extradata_size > 1 && st->codecpar->extradata) {
         if(atom.type == MKTAG('l','h','v','C')){
-	    uint8_t hvcC_header[4] = {0x68,0x76,0x63,0x43};
-	    uint8_t lhvC_header[4] = {0x6C,0x68,0x76,0x43};
+            uint8_t hvcC_header[4] = {0x68,0x76,0x63,0x43};
+            uint8_t lhvC_header[4] = {0x6C,0x68,0x76,0x43};
             int hvcC_size = st->codecpar->extradata_size;
             uint8_t *hvcC;
             hvcC = av_malloc(hvcC_size);
