@@ -565,7 +565,6 @@ enum AVCodecID {
     AV_CODEC_ID_DVD_NAV,
     AV_CODEC_ID_TIMED_ID3,
     AV_CODEC_ID_BIN_DATA,
-    AV_CODEC_ID_METT_DISPARITY,  ///disparity track
 
     AV_CODEC_ID_PROBE = 0x19000, ///< codec_id is not known (like AV_CODEC_ID_NONE) but lavf should attempt to identify it
 
@@ -578,6 +577,7 @@ enum AVCodecID {
 
     AV_CODEC_ID_AC4 = 0x31000, //dolby ac4 codec
     AV_CODEC_ID_BYTE_VC2 = 0x41000, //ByteDance VC2 codec
+    AV_CODEC_ID_METT_DISPARITY = 0x51000,  //disparity track
 };
 
 /**
