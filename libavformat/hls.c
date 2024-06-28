@@ -45,7 +45,7 @@
 #include "sample_aes.h"
 #include "avio_internal.h"
 #include "id3v2.h"
-
+#include <stdbool.h>
 #define INITIAL_BUFFER_SIZE 32768
 
 #define MAX_FIELD_LEN 64
@@ -274,6 +274,7 @@ typedef struct HLSContext {
     int hls_sub_demuxer_probe_type;
     int seg_max_retry;
     int enable_seg_error;
+    int enable_hls_pts_recal_opt;
 } HLSContext;
 
 static void free_segment_dynarray(struct segment **segments, int n_segments)
@@ -2955,12 +2956,31 @@ restart:
                                 }
                                 seg->timestamp_list_size = new_timestamp_list_size;
                             }
-                            if (seg->start_dts[pls->pkt->stream_index] == AV_NOPTS_VALUE || (pls->pkt->dts != AV_NOPTS_VALUE && pls->pkt->dts < seg->start_dts[pls->pkt->stream_index])) {
+                            
+                            bool is_need_update_dts = false;
+                            
+                            if(c->enable_hls_pts_recal_opt) {
+                                if((pls->pkt->flags & AV_PKT_FLAG_CORRUPT) == 0) {
+                                    is_need_update_dts = (seg->start_dts[pls->pkt->stream_index] == AV_NOPTS_VALUE && (pls->pkt->flags & AV_PKT_FLAG_KEY))
+                                                         || (pls->pkt->dts != AV_NOPTS_VALUE && pls->pkt->dts < seg->start_dts[pls->pkt->stream_index]);
+                                }
+                            } else {
+                                is_need_update_dts = (seg->start_dts[pls->pkt->stream_index] == AV_NOPTS_VALUE
+                                                      || (pls->pkt->dts != AV_NOPTS_VALUE && pls->pkt->dts < seg->start_dts[pls->pkt->stream_index]));
+                            }
+                            
+                            if (is_need_update_dts) {
                                 seg->start_dts[pls->pkt->stream_index] = pls->pkt->dts;
                                 seg->start_pts[pls->pkt->stream_index] = pls->pkt->pts;
                             }
+                            
+                            if(c->enable_hls_pts_recal_opt && seg->start_dts[pls->pkt->stream_index] == AV_NOPTS_VALUE) {
+                                continue;
+                            }
+                                    
                             int64_t pred = av_rescale_q(seg->start_time, AV_TIME_BASE_Q, pls->main_streams[pkt->stream_index]->time_base);
                             // add by teddy: use base time for correct timeStamp
+                            
                             if (pls->pkt->dts != AV_NOPTS_VALUE) {
                                 pls->pkt->dts = pls->pkt->dts - seg->start_dts[pls->pkt->stream_index] + pred;
                             }
@@ -3335,6 +3355,7 @@ static const AVOption hls_options[] = {
     { "abr", "get abr strategy", OFFSET(abr), AV_OPT_TYPE_IPTR, { .i64 = 0 }, INT64_MIN, INT64_MAX, FLAGS },
     { "seg_max_retry", "Maximum number of times to reload a segment on error.", OFFSET(seg_max_retry), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
     { "enable_seg_error", "Report error if a segment on error.", OFFSET(enable_seg_error), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS},
+    { "hls_pts_recal_opt", "pts and dts recalculate optimize.", OFFSET(enable_hls_pts_recal_opt), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
     {NULL}
 };
 
