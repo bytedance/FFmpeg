@@ -8732,7 +8732,7 @@ static int mov_read_fragment_info(struct AVFormatContext *s, int stream_index, A
     if (!s || !(mov = s->priv_data) || stream_index < 0 || stream_index >= (int) s->nb_streams) {
         return AVERROR(EINVAL);
     }
-    if (mov->frag_index.nb_items <= 0) {
+    if (mov->frag_index.nb_items <= 0 && (!mov->fix_fmp4_fragment_info_calculation || !mov->is_fmp4)) {
         // normal mp4
         AVFragmentInfo *allocated_infos = NULL;
         MOVStreamContext *sc = NULL;
@@ -9023,6 +9023,8 @@ static const AVOption mov_options[] = {
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "parse_all_fragments", "parse all fragments", OFFSET(parse_all_fragments),
             AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "fix_fmp4_fragment_info_calculation", "fix fmp4 fragment info calculation", OFFSET(fix_fmp4_fragment_info_calculation),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
 

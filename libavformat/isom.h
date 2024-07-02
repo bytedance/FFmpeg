@@ -333,6 +333,7 @@ typedef struct MOVContext {
     int check_pb_error;
     int enable_dynamic_pb;
     int parse_all_fragments;
+    int fix_fmp4_fragment_info_calculation;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
