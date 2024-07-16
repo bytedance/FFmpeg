@@ -8572,7 +8572,7 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     if (!mov->frag_index.complete)
         return 0;
 
-    if (st && st->id >= 0) {
+    if (st && st->id >= 0 && !mov->fix_seek_timestamp) {
         MOVStreamContext *sc = st->priv_data;
         timestamp += (sc ? sc->time_offset : 0);
     }
@@ -8594,13 +8594,16 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
 
 static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, int flags)
 {
+    MOVContext *mov = s->priv_data;
     MOVStreamContext *sc = st->priv_data;
     int sample, time_sample, ret;
     unsigned int i;
 
     // Here we consider timestamp to be PTS, hence try to offset it so that we
     // can search over the DTS timeline.
-    timestamp -= (sc->min_corrected_pts + sc->dts_shift);
+    if (!mov->fix_seek_timestamp) {
+        timestamp -= (sc->min_corrected_pts + sc->dts_shift);
+    }
 
     ret = mov_seek_fragment(s, st, timestamp);
     if (ret < 0)
@@ -9083,6 +9086,8 @@ static const AVOption mov_options[] = {
     { "parse_all_fragments", "parse all fragments", OFFSET(parse_all_fragments),
             AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "fix_fmp4_fragment_info_calculation", "fix fmp4 fragment info calculation", OFFSET(fix_fmp4_fragment_info_calculation),
+        AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "fix_seek_timestamp", "fix seek timestamp error", OFFSET(fix_seek_timestamp),
         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
