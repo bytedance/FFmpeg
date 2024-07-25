@@ -263,6 +263,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     if ((ret = ff_openssl_init()) < 0)
         return ret;
 
+    av_dict_set_int(options, "tt_opaque", p->tt_opaque, 0);
     if ((ret = ff_tls_open_underlying(c, h, uri, options)) < 0)
         goto fail;
 
