@@ -1,6 +1,6 @@
 /*
  * Export private or deprecated symbols
- *
+ * 
  * Copyright 2022 Bytedance Inc.
  * SPDX license identifier: LGPL-2.1-or-later
  *
@@ -29,7 +29,7 @@
 
 /**
  * A custom AVCodec register for private codec implementation
- *
+ * 
  * @param codec  pointer to AVCodec, only support a samll set of codecs.
  * @param codec_size additional abi check, must be same as sizeof(AVCodec)
  * @return int Return 0 for success, others failed.
